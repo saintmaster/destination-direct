@@ -1855,6 +1855,23 @@ function devBadge(filedLat,filedLon,actLat,actLon,legBearing){
 }
 
 // --- ETP CALCULATION -----------------------------------------
+
+// Waypoint ETO entry — tap +ETO on any fix to enter estimated time over
+async function promptWptETO(idx){
+  const w=S.fp.waypoints[idx];
+  if(!w)return;
+  const val=await inputAsync('ETO at '+w.name+' (HHMM UTC):',w.eto||'');
+  if(val===null)return;
+  const clean=val.replace(/[^0-9]/g,'').slice(0,4);
+  S.fp.waypoints[idx].eto=clean||undefined;
+  // If this is the OEP, auto-update callupEntryFix and callupEntryTime
+  if(idx===S.fp.oepIdx){
+    S.fp.callupEntryFix=w.name;
+    if(clean)S.fp.callupEntryTime=clean;
+  }
+  saveAll();renderCon();
+}
+
 function calcETP(wpts,mach,engineOutMach,altn1Id,altn2Id){
   const coordWpts=wpts.filter(w=>w.lat!==undefined);
   if(coordWpts.length<2)return null;
@@ -2282,6 +2299,7 @@ function applyFPL(d){
          !/^\d/.test(w.name)&&// skip pure lat/lon format fixes like 5600N04000W
          w.name.length>=3&&w.name.length<=6){
         _saveUserFix(w.name,w.lat,w.lon);
+        // Auto-learn: save to user fixes if not already in NAT_FIXES_VERIFIED
       }
     });
   }
@@ -2453,8 +2471,25 @@ function enterFlightMode(){
     }
   };
   document.getElementById('flight-btn-ctr').onclick=()=>{
-    mapState.offX=0;mapState.offY=0;saveMapState();
-    const c=document.getElementById('map-canvas');if(c)drawMap(c);
+    // Zoom to fit entire flight plan
+    const wpts=S.fp.waypoints.filter(w=>w.lat!==undefined&&w.lon!==undefined);
+    const c=document.getElementById('map-canvas');
+    if(wpts.length>=2&&c){
+      const lats=wpts.map(w=>w.lat),lons=wpts.map(w=>w.lon);
+      const minLat=Math.min(...lats),maxLat=Math.max(...lats);
+      const minLon=Math.min(...lons),maxLon=Math.max(...lons);
+      const cLat=(minLat+maxLat)/2,cLon=(minLon+maxLon)/2;
+      const W=c.width/window.devicePixelRatio,H=c.height/window.devicePixelRatio;
+      const latSpan=Math.max(maxLat-minLat,5),lonSpan=Math.max(maxLon-minLon,10);
+      // Use _mapProj.bs if available, otherwise fallback
+      const bs=(_mapProj&&_mapProj.bs&&_mapProj.bs>0)?_mapProj.bs:8;
+      const scaleByLat=(H*0.8)/(latSpan*bs);
+      const scaleByLon=(W*0.8)/(lonSpan*bs*Math.cos(cLat*Math.PI/180));
+      mapState.scale=Math.max(Math.min(scaleByLat,scaleByLon,10),0.05);
+      mapState.offX=0;mapState.offY=0;
+      mapState.centerLat=cLat;mapState.centerLon=cLon;
+      saveMapState();drawMap(c);
+    } else {mapState.offX=0;mapState.offY=0;saveMapState();const c2=document.getElementById('map-canvas');if(c2)drawMap(c2);}
   };
   document.getElementById('flight-btn-ac').onclick=()=>{
     const AC_SCALE=mapState.scale;
@@ -3695,6 +3730,7 @@ function vPlan(){
         ${fp.oxfIdx===i?'<span style="font-size:9px;color:#9b4dff;font-weight:bold;margin-left:3px">OXF</span>':''}
         ${hc?`<span style="font-size:9px;color:#2a5a7a">${w.lat.toFixed(2)}°/${w.lon.toFixed(2)}°</span>`:''}
         ${windBadge}
+        ${w.eto?`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 5px"> ⏱${w.eto}Z</span>`:`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 5px">+ETO</span>`}
         ${w.actualTime?`<span style="font-size:9px;color:#90ee90"> ✓${w.actualTime}Z</span>`:''}
         <span onclick="togWE(${i})" style="cursor:pointer;font-size:13px;color:${hc?'#40a040':'#4a7a9a'}">📍</span>
         <span onclick="dctFromHere(${i})" style="color:#4a7aaa;cursor:pointer;font-size:11px;margin-left:4px;background:#0a1520;border:1px solid #1a3a5a;border-radius:2px;padding:1px 5px" title="Reroute: DCT to this fix">DCT</span>
@@ -3797,7 +3833,7 @@ function vPlan(){
           }).join('');
         })()}
       </div>
-      ${fld('feom','Engine-Out Speed (if different)',fp.engineOutMach||'','e.g. M.74')}
+      ${fld('feom','Engine-Out Speed (if different)',(fp.engineOutMach||'').replace('M.',''),'e.g. 74','inputmode="numeric" pattern="[0-9]*"')}
       ${fld('fetp','Manual ETP Override (optional)',fp.etpManual||'','Waypoint name or N5000 W03000')}
       <div id="etp-st" style="font-size:11px;color:#4a7a9a;min-height:16px"></div>
     </div>
@@ -3829,7 +3865,7 @@ function vPlan(){
 }
 
 function bPlan(){
-  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',feom:'engineOutMach',fetp:'etpManual'}; // fc,ft,fl,fs,ftmi now use oninput
+  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',fetp:'etpManual'}; // fc,ft,fl,fs,ftmi now use oninput
   Object.entries(FM).forEach(([id,k])=>document.getElementById(id)?.addEventListener('input',e=>{
     // Force uppercase for identifier fields
     const UC=['fd','fds','fc','ft','fa1','fa2','fl','fs','ftmi'];
@@ -3844,6 +3880,12 @@ function bPlan(){
     S.fp.selcal=v;saveAll();
   });
   // Mach field: user types digits after "M." prefix, store as "M.82"
+  // Engine-out speed: type digits, store as M.xx
+  document.getElementById('feom')?.addEventListener('input',e=>{
+    const v=e.target.value.replace(/[^0-9]/g,'');
+    S.fp.engineOutMach=v?'M.'+v:'';
+    saveAll();
+  });
   document.getElementById('fm')?.addEventListener('input',e=>{
     const v=e.target.value.replace(/[^0-9]/g,''); // digits only
     S.fp.mach='M.'+v;
@@ -4217,10 +4259,10 @@ function buildCallup(posStr){
   // e.g. NICSO/2215 M082F390-RMK/2ND NAT W F390 MAX F400
   var cpdlcMach=mach.match(/M?(0?\.\d+)/)?'M0'+mach.match(/M?(0?\.\d+)/)[1].replace(/^0/,''):'M082';
   var cpdlcFL=lvl.replace(/^FL\s*/,'F');
-  var cpdlcMaxFL=ableLvl.replace(/^FL\s*/,'F');
+  var cpdlcMaxFL=ableLvl.replace(/^FL\s*/i,'').replace(/^/,'FL');
   var cpdlcTrack=fp.trackLetter?fp.trackLetter.toUpperCase():'?';
   var cpdlcTime=oefTime.replace('Z','');
-  var cpdlcFmt=oef+'/'+cpdlcTime+' '+cpdlcMach+cpdlcFL+'-RMK/2ND NAT '+cpdlcTrack+' '+cpdlcFL+' MAX '+cpdlcMaxFL;
+  var cpdlcFmt=oef+'/'+cpdlcTime+' '+cpdlcMach+cpdlcFL+'-RMK/2ND NAT '+cpdlcTrack+' '+cpdlcFL+' MAX '+cpdlcMaxFL.replace(/^FL/,'FL');
   var L=[];
   L.push('=== OCEANIC CALLUP SEQUENCE ============================');
   L.push('Station:  '+st);
@@ -4259,7 +4301,7 @@ function buildCallup(posStr){
   L.push('');
   L.push('[WAIT FOR ATC SELCAL RESULT + ACKNOWLEDGE]');
   L.push('');
-  L.push('READBACK: '+st+', '+cs+', SELCAL OKAY'+(nextFir?', '+nextFir+'.':'.'));
+  L.push('READBACK: '+st+', '+cs+', SELCAL CHECK OK'+(nextFir?', '+nextFir+'.':'.'));
   L.push('');
 
   // STEP 2: RCL
@@ -4355,7 +4397,7 @@ function buildCallup(posStr){
   L.push(cs+', [ASSIGNED FREQ] kHz,');
   L.push('SELCAL CHECK.');
   L.push('');
-  L.push('[READBACK]: '+nextSectorName2+' RADIO, '+cs+', SELCAL OKAY, PRIMARY [FREQ], SECONDARY [FREQ].');
+  L.push('[READBACK]: '+nextSectorName2+' RADIO, '+cs+', SELCAL CHECK OK, PRIMARY [FREQ], SECONDARY [FREQ].');
   L.push('');
 
   // NOTES
@@ -4423,14 +4465,14 @@ function vCallup(){
     <div id="oceanic-checklist" style="display:none;background:#060d18;border:1px solid #1e3a5f;border-radius:4px;padding:10px;margin-top:2px">
       <div style="font-size:9px;color:#ffaa44;font-weight:bold;letter-spacing:.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #1e3a5f">PRE-ENTRY (before OEP)</div>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc1" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">SELCAL check completed</span></label>
-      <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc2" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Log onto CPDLC/ADSC (30 min before OEP)</span></label>
+      <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc2" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Log onto CPDLC/ADS-C (10–25 min before OEP per NAT Doc 007 §6.3.41)</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc3" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Confirm compliance with oceanic clearance</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc4" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">HF check on assigned frequencies</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc5" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">VHF secondary → 121.5 MHz</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc6" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Altimeter check</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:12px;cursor:pointer"><input id="oc7" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Navigation accuracy check at OEP</span></label>
       <div style="font-size:9px;color:#ffaa44;font-weight:bold;letter-spacing:.08em;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #1e3a5f">POST-ENTRY (after OEP)</div>
-      <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc8" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Squawk 2000</span></label>
+      <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc8" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Squawk 2000 — 10 min after OEP (NAT Doc 007 V.2026-1)</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc9" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">SLOP applied — right offset only</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc10" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Satcom/voice datalink operational</span></label>
       <label style="display:grid;grid-template-columns:20px 1fr;gap:6px;align-items:start;margin-bottom:8px;cursor:pointer"><input id="oc11" type="checkbox" style="margin-top:2px;accent-color:#50c878;width:16px;height:16px"><span style="font-size:12px;color:#7dcfff;line-height:1.4">Monitor 123.45 MHz (air-to-air)</span></label>
@@ -4489,7 +4531,15 @@ function bCallup(){
     } else gen(null);
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');alert('Copied!');});
-  document.getElementById('btn-glasses')?.addEventListener('click',()=>{const url=location.origin+location.pathname+'#glasses';prompt('Open this URL in Web Scope on your G2:',location.origin+'/.netlify/functions/glasses');});
+  document.getElementById('btn-glasses')?.addEventListener('click',()=>{
+    const url=location.origin+'/.netlify/functions/glasses';
+    navigator.clipboard?.writeText(url).then(()=>{
+      const t=document.createElement('div');
+      t.textContent='Glasses URL copied!';
+      t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a3a1a;color:#50c878;padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;border:1px solid #3a6a3a';
+      document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+    }).catch(()=>prompt('Copy this URL:',url));
+  });
 
 
   // GPS / FMS source toggle
@@ -4997,11 +5047,11 @@ function vPosrep(){
     s+='.';
     s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
     if(isGander){
-      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL OKAY. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
+      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
     } else if(isShanwick){
-      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     } else {
-      s+=`READBACK: ${st}, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+      s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     }
     return s;
   }
@@ -5070,9 +5120,14 @@ function vPosrep(){
         ${btn('bs','btn-q-pos','📡 POS REPORT','font-size:11px;padding:10px 6px')}
         ${btn('bp','btn-q-selcal','📻 SELCAL CHECK','font-size:11px;padding:10px 6px')}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
         ${btn('by','btn-q-wah','✈ ABLE HIGHER','font-size:11px;padding:10px 6px')}
         ${btn('bo','btn-q-rev','🔄 REVISED ETA','font-size:11px;padding:10px 6px')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+        ${btn('bg','btn-q-callup','📻 CALLUP','font-size:10px;padding:10px 4px')}
+        ${btn('bg','btn-q-cpdlc','🖥 CPDLC','font-size:10px;padding:10px 4px')}
+        ${btn('bd','btn-q-divert','⚠ DIVERT','font-size:10px;padding:10px 4px')}
       </div>
       <div id="quick-script-out" style="display:none;margin-top:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
@@ -5136,8 +5191,7 @@ function vPosrep(){
     <div class="sec">
       ${H('Met / Remarks')}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div class="fld"><label class="lbl">OAT (°C)</label>
-          <input id="roat" value="${esc(r.oat)}" placeholder="-56" style="${iStyle}" ${iAttr}></div>
+        
         <div class="fld"><label class="lbl">Wind (dir/spd)</label>
           <input id="rwd" value="${esc(r.wind)}" placeholder="270/45" style="${iStyle}" ${iAttr}></div>
       </div>
@@ -5162,7 +5216,7 @@ function vPosrep(){
 }
 function bPosrep(){
   const FM={rla:'lat',rlo:'lon',rpos:'position',rtm:'time',ralt:'altitude',
-    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',roat:'oat',rwd:'wind',rrm:'remarks'};
+    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',rwd:'wind',rrm:'remarks'};
   Object.entries(FM).forEach(([id,k])=>{
     const el=document.getElementById(id);if(!el)return;
     el.addEventListener('input',e=>{
@@ -5224,11 +5278,11 @@ function bPosrep(){
     s+='.';
     s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
     if(isGander){
-      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL OKAY. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
+      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
     } else if(isShanwick){
-      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     } else {
-      s+=`READBACK: ${st}, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+      s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     }
     return s;
   }
@@ -5249,9 +5303,17 @@ function bPosrep(){
   document.getElementById('btn-q-selcal')?.addEventListener('click',()=>showQuickScript('SELCAL CHECK',_qSelcal()));
   document.getElementById('btn-q-wah')?.addEventListener('click',()=>showQuickScript('ABLE HIGHER',_qWAH()));
   document.getElementById('btn-q-rev')?.addEventListener('click',()=>showQuickScript('REVISED ESTIMATE',_qRevEta()));
+  document.getElementById('btn-q-callup')?.addEventListener('click',()=>showQuickScript('CALLUP',_qCallup&&_qCallup()||'Select station in COMMS tab first'));
+  document.getElementById('btn-q-cpdlc')?.addEventListener('click',()=>showQuickScript('CPDLC LOGON',_qCPDLC&&_qCPDLC()||''));
+  document.getElementById('btn-q-divert')?.addEventListener('click',()=>showQuickScript('DIVERT',_qDivert&&_qDivert()||''));
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
-    const url=location.origin+location.pathname+'#glasses';
-    prompt('Open this URL in Web Scope on your G2:',location.origin+'/.netlify/functions/glasses');
+    const url=location.origin+'/.netlify/functions/glasses';
+    navigator.clipboard?.writeText(url).then(()=>{
+      const t=document.createElement('div');
+      t.textContent='Glasses URL copied!';
+      t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a3a1a;color:#50c878;padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;border:1px solid #3a6a3a';
+      document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+    }).catch(()=>prompt('Copy this URL:',url));
   });
   document.getElementById('btn-q-copy')?.addEventListener('click',()=>{
     const txt=document.getElementById('quick-script-text');
@@ -5493,9 +5555,14 @@ function vComms(){
         ${btn('bs','btn-q-pos','📡 POS REPORT','font-size:11px;padding:11px 6px;font-weight:bold')}
         ${btn('bp','btn-q-selcal','📻 SELCAL CHECK','font-size:11px;padding:11px 6px;font-weight:bold')}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
         ${btn('by','btn-q-wah','✈ ABLE HIGHER','font-size:11px;padding:11px 6px')}
         ${btn('bo','btn-q-rev','🔄 REVISED ETA','font-size:11px;padding:11px 6px')}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+        ${btn('bg','btn-q-callup','📻 CALLUP','font-size:10px;padding:10px 4px')}
+        ${btn('bg','btn-q-cpdlc','🖥 CPDLC','font-size:10px;padding:10px 4px')}
+        ${btn('bd','btn-q-divert','⚠ DIVERT','font-size:10px;padding:10px 4px')}
       </div>
       ${scriptOut}
     </div>
@@ -5543,10 +5610,7 @@ function vComms(){
 
     <div class="sec">
       ${H('Met / Remarks')}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-        <div class="fld"><label class="lbl">OAT (°C)</label><input id="roat" value="${esc(r.oat)}" placeholder="-56" style="${iStyle}" ${iAttr}></div>
-        <div class="fld"><label class="lbl">Wind</label><input id="rwd" value="${esc(r.wind)}" placeholder="270/45" style="${iStyle}" ${iAttr}></div>
-      </div>
+      <div class="fld"><label class="lbl">Wind</label><input id="rwd" value="${esc(r.wind)}" placeholder="270/45" style="${iStyle}" ${iAttr}></div>
       <div class="fld"><label class="lbl">Remarks</label><input id="rrm" value="${esc(r.remarks)}" placeholder="Nil" style="${iStyle}" ${iAttr}></div>
     </div>
 
@@ -5572,10 +5636,192 @@ function vComms(){
   </div>`;
 }
 
+  // Script helpers
+
+  // ── CALLUP quick script — auto-generates from flight plan data ──────────
+function _qCallup(){
+  const fp=S.fp;
+  const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
+  const stId=S.selStation?S.selStation.id:'';
+  const st=S.selStation?S.selStation.call:'[STATION]';
+  const isGander=stId==='CZQX';
+  const isShanwick=stId==='EGGX';
+  const isReykjavik=stId==='BIRD';
+  const primaryFreq=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+  // Get OEP from waypoints
+  const oepWpt=fp.oepIdx>=0?fp.waypoints[fp.oepIdx]:null;
+  const oef=oepWpt?oepWpt.name:(fp.callupEntryFix||'[OEP]');
+  const oefETO=oepWpt&&oepWpt.eto?oepWpt.eto+'Z':(fp.callupEntryTime?fp.callupEntryTime+'Z':'[HHMM]Z');
+  const lvl=(fp.level||'[FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const mach=fp.mach||'[MACH]';
+  const ableLvl=(fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const tmi=fp.tmi||'[TMI]';
+  const selcal=fp.selcal||'[SELCAL]';
+  const isTrack=fp.trackType!=='random'&&fp.trackLetter;
+  const dest=(fp.dest||'[DEST]').toUpperCase();
+  const nextFir=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
+
+  if(isReykjavik){
+    return`[REYKJAVIK — No RCL required per NAT Doc 007 V.2026-1]\n\n${st}, ${cs}, FLIGHT LEVEL ${lvl.replace('FL','')}, ${mach}, SELCAL CHECK ${selcal}${nextFir?', '+nextFir:''}.\n\n[WAIT FOR SELCAL TONE]\n\n${cs}, SELCAL CHECK OK.`;
+  }
+
+  let s='';
+  // RCL timing note
+  if(isGander)s+='[GANDER OCR — Send RCL 90-60 min before OEP. No clearance issued. Fly domestic clearance.]\n';
+  else if(isShanwick)s+='[SHANWICK — Send RCL 90-30 min before OEP. Wait for oceanic clearance.]\n';
+  s+='\n';
+
+  // Initial HF call
+  s+=`${st}, ${cs}, `;
+  if(nextFir)s+=nextFir+', ';
+  s+=`SELCAL CHECK ${selcal}.`;
+  s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
+  s+=`${cs}, SELCAL CHECK OK.`;
+  s+='\n\n';
+
+  // RCL content
+  s+='-- RCL --\n';
+  // CPDLC format
+  const cpdlcMach=mach.replace(/^M\./i,'M0').replace('M00','M0');
+  const cpdlcFL=lvl.replace(/FL\s*/,'F');
+  const cpdlcMaxFL=ableLvl.replace(/FL\s*/,'FL');
+  s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}-RMK/2ND NAT${isTrack?' '+fp.trackLetter.toUpperCase():''} ${cpdlcFL} MAX ${cpdlcMaxFL}\n`;
+  s+='\n';
+  s+='VOICE (if ACARS unavail):\n';
+  s+=`${st}, ${cs},\n`;
+  s+=`ESTIMATING ${oef} AT ${oefETO},\n`;
+  s+=`REQUEST ${mach}, ${lvl},\n`;
+  s+=`ABLE ${ableLvl}.\n`;
+  // TMI always included
+  s+=`TMI ${tmi}.`;
+
+  if(isGander){
+    s+='\n\n[EXPECT: RCL RECEIVED BY GANDER — NOT A CLEARANCE]\n';
+    s+='[FLY EXISTING DOMESTIC CLEARANCE INTO OCEANIC]\n';
+    s+='[SQUAWK 2000 — 10 MIN AFTER OEP]';
+  } else if(isShanwick){
+    s+='\n\n[WAIT FOR OCEANIC CLEARANCE VIA ACARS OR HF]\n';
+    // Clearance readback
+    if(isTrack){
+      s+=`\nREADBACK: ${cs} CLEARED TO ${dest}\n`;
+      s+=`VIA NAT TRACK ${fp.trackLetter.toUpperCase()} TMI ${tmi},\n`;
+      s+=`FROM ${oef} MAINTAIN ${lvl},\n`;
+      s+=`${mach}, WILCO.`;
+    } else {
+      s+=`\nREADBACK: ${cs} CLEARED TO ${dest}\n`;
+      s+=`VIA FLIGHT PLANNED ROUTE,\n`;
+      s+=`FROM ${oef} MAINTAIN ${lvl},\n`;
+      s+=`${mach}, WILCO.`;
+    }
+  }
+  return s;
+}
+
+// ── CPDLC LOGON quick script ─────────────────────────────────────────────
+function _qCPDLC(){
+  const fp=S.fp;
+  const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
+  const stId=S.selStation?S.selStation.id:'';
+  const isGander=stId==='CZQX';
+  const isShanwick=stId==='EGGX';
+  const facId=isGander?'CZQX':isShanwick?'EGGX':'[FACILITY]';
+  return`CPDLC LOGON — Log on 10-25 min before OEP (NAT Doc 007 §6.3.41)\n\nFMS CPDLC LOGON:\n  FACILITY: ${facId}\n  CALLSIGN: ${cs}\n\n[WAIT FOR ATC CONNECT MESSAGE]\n\n[VERIFY ADS-C CONTRACT ESTABLISHED]\n\nNote: Must be logged on before oceanic entry. If logon fails, use HF voice.`;
+}
+
+  // ── DIVERT quick script — ETP-aware ─────────────────────────────────────
+function _qDivert(){
+  const fp=S.fp;
+  const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
+  const st=S.selStation?S.selStation.call:'[STATION]';
+  const fl=(fp.level||'[FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  // Determine nearest alternate based on current position vs ETP
+  let divertTo='[ALTERNATE]';
+  let divertICAO='';
+  const etp=S.fp.altn1&&S.fp.altn2?calcETP(S.fp.waypoints,S.fp.mach,S.fp.engineOutMach,S.fp.altn1,S.fp.altn2):null;
+  if(etp&&S.posrep.lat){
+    // Compare current position fraction along route to ETP fraction
+    const curLat=parseFloat(S.posrep.lat)||null;
+    const curLon=parseFloat(S.posrep.lon)||null;
+    if(curLat&&curLon){
+      const ALT_DB_local=typeof ALT_DB!=='undefined'?ALT_DB:{};
+      const a1=ALT_DB_local[fp.altn1?.toUpperCase()];
+      const a2=ALT_DB_local[fp.altn2?.toUpperCase()];
+      if(a1&&a2){
+        const d1=Math.sqrt(Math.pow(curLat-a1.lat,2)+Math.pow(curLon-a1.lon,2));
+        const d2=Math.sqrt(Math.pow(curLat-a2.lat,2)+Math.pow(curLon-a2.lon,2));
+        divertTo=d1<d2?(a1.name||fp.altn1):(a2.name||fp.altn2);
+        divertICAO=d1<d2?fp.altn1:fp.altn2;
+      }
+    }
+  } else if(fp.altn1){
+    divertTo=fp.altn1;divertICAO=fp.altn1;
+  }
+  return`${st}, ${cs}, PAN PAN, PAN PAN, PAN PAN.\n\n[WAIT FOR ATC]\n\n${cs},\nDIVERTING TO ${divertTo}${divertICAO?' ('+divertICAO+')':''},\nPRESENT POSITION,\nDESCENDING ${fl},\nSOULS ON BOARD [POB],\nFUEL REMAINING [HH+MM],\nOVER.`;
+  }
+
+function _showScript(label,text){
+  const out=document.getElementById('quick-script-out');
+  const lbl=document.getElementById('quick-script-label');
+  const txt=document.getElementById('quick-script-text');
+  if(!out||!lbl||!txt)return;
+  lbl.textContent=label;
+  txt.textContent=text;
+  out.style.display='block';
+  try{fetch('/.netlify/functions/glasses-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg:text,route:label})}).catch(()=>{});}catch(e){}
+  navigator.clipboard?.writeText(text).catch(()=>{});
+}
+function _qPos(){
+  const r=S.posrep,fp=S.fp;
+  const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
+  const st=S.selStation?S.selStation.call:'[STATION]';
+  const pf=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+  const la=parseCS(r.lat),lo=parseCS(r.lon);
+  const cn=(la!==null&&lo!==null)?normC(la,lo):null;
+  const pos=(r.position||(cn?cn.display:'[POSITION]')).toUpperCase();
+  const t=r.time?r.time+'Z':'[TIME]Z';
+  const fl=(r.altitude||fp.level||'[FL]').replace(/FL\s*/i,'');
+  const nw=(r.nextWpt||'[NEXT FIX]').toUpperCase();
+  const ne=r.nextEta?r.nextEta+'Z':'[ETA]Z';
+  const wa=(r.wptAfter||'[FIX AFTER]').toUpperCase();
+  const oat=r.oat?'\nTEMPERATURE '+(parseFloat(r.oat)<0?'MINUS':'PLUS')+' '+Math.abs(parseFloat(r.oat)||0)+' CELSIUS':'';
+  const wind=r.wind?'\nWIND '+r.wind:'';
+  const rmk=r.remarks&&r.remarks.toLowerCase()!=='nil'?'\nREMARKS: '+r.remarks.toUpperCase():'';
+  const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
+  return`${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC]\n\n${cs}\nPOSITION ${pos}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${slop}${rmk}\nOVER\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
+}
+function _qSelcal(){
+  const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
+  const stId=S.selStation?S.selStation.id:'';
+  const st=S.selStation?S.selStation.call:'[STATION]';
+  const isGander=stId==='CZQX';const isShanwick=stId==='EGGX';
+  const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
+  const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+  const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
+  let s=`${st}, ${cs}, SELCAL CHECK`;
+  if(nextFirName)s+=', '+nextFirName;s+='.';
+  s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
+  if(isGander){s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;}
+  else if(isShanwick){s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
+  else{s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
+  return s;
+}
+function _qWAH(){
+  const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
+  const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
+  return`[OPTIONAL — only if ATC requests or operationally useful per NAT Doc 007 V.2026-1]\n\n${cs}, WHEN ABLE ${afl}.`;
+}
+function _qRev(){
+  const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
+  const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
+  const ne=S.posrep.nextEta?S.posrep.nextEta+'Z':'[REVISED ETA]Z';
+  return`REVISED ESTIMATE, ${cs}, ESTIMATING ${nw} NOW AT ${ne}.`;
+}
+
 function bComms(){
   // Field bindings
   const FM={rla:'lat',rlo:'lon',rpos:'position',rtm:'time',ralt:'altitude',
-    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',roat:'oat',rwd:'wind',rrm:'remarks'};
+    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',rwd:'wind',rrm:'remarks'};
   Object.entries(FM).forEach(([id,k])=>{
     const el=document.getElementById(id);if(!el)return;
     el.addEventListener('input',e=>{
@@ -5600,77 +5846,27 @@ function bComms(){
     const b=document.getElementById('cu-body');if(b)b.style.display=b.style.display==='none'?'block':'none';
   });
 
-  // Script helpers
-  function _showScript(label,text){
-    const out=document.getElementById('quick-script-out');
-    const lbl=document.getElementById('quick-script-label');
-    const txt=document.getElementById('quick-script-text');
-    if(!out||!lbl||!txt)return;
-    lbl.textContent=label;
-    txt.textContent=text;
-    out.style.display='block';
-    try{fetch('/.netlify/functions/glasses-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msg:text,route:label})}).catch(()=>{});}catch(e){}
-    navigator.clipboard?.writeText(text).catch(()=>{});
-  }
-  function _qPos(){
-    const r=S.posrep,fp=S.fp;
-    const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
-    const st=S.selStation?S.selStation.call:'[STATION]';
-    const pf=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
-    const la=parseCS(r.lat),lo=parseCS(r.lon);
-    const cn=(la!==null&&lo!==null)?normC(la,lo):null;
-    const pos=(r.position||(cn?cn.display:'[POSITION]')).toUpperCase();
-    const t=r.time?r.time+'Z':'[TIME]Z';
-    const fl=(r.altitude||fp.level||'[FL]').replace(/FL\s*/i,'');
-    const nw=(r.nextWpt||'[NEXT FIX]').toUpperCase();
-    const ne=r.nextEta?r.nextEta+'Z':'[ETA]Z';
-    const wa=(r.wptAfter||'[FIX AFTER]').toUpperCase();
-    const oat=r.oat?'\nTEMPERATURE '+(parseFloat(r.oat)<0?'MINUS':'PLUS')+' '+Math.abs(parseFloat(r.oat)||0)+' CELSIUS':'';
-    const wind=r.wind?'\nWIND '+r.wind:'';
-    const rmk=r.remarks&&r.remarks.toLowerCase()!=='nil'?'\nREMARKS: '+r.remarks.toUpperCase():'';
-    const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
-    return`${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC]\n\n${cs}\nPOSITION ${pos}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${slop}${rmk}\nOVER\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
-  }
-  function _qSelcal(){
-    const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
-    const stId=S.selStation?S.selStation.id:'';
-    const st=S.selStation?S.selStation.call:'[STATION]';
-    const isGander=stId==='CZQX';const isShanwick=stId==='EGGX';
-    const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
-    const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
-    const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
-    let s=`${st}, ${cs}, SELCAL CHECK`;
-    if(nextFirName)s+=', '+nextFirName;s+='.';
-    s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
-    if(isGander){s+=`READBACK: GANDER RADIO, ${cs}, SELCAL OKAY. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;}
-    else if(isShanwick){s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
-    else{s+=`READBACK: ${st}, ${cs}, SELCAL OKAY, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
-    return s;
-  }
-  function _qWAH(){
-    const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
-    const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
-    const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
-    return`${cs} ABLE ${afl} AT ${nw}.`;
-  }
-  function _qRev(){
-    const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
-    const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
-    const ne=S.posrep.nextEta?S.posrep.nextEta+'Z':'[REVISED ETA]Z';
-    return`REVISED ESTIMATE, ${cs}, ESTIMATING ${nw} NOW AT ${ne}.`;
-  }
+  // Script helpers — _qCallup, _qCPDLC, _qDivert defined globally below
 
-  document.getElementById('btn-q-pos')?.addEventListener('click',()=>_showScript('POS REPORT',_qPos()));
+    document.getElementById('btn-q-pos')?.addEventListener('click',()=>_showScript('POS REPORT',_qPos()));
   document.getElementById('btn-q-selcal')?.addEventListener('click',()=>_showScript('SELCAL CHECK',_qSelcal()));
   document.getElementById('btn-q-wah')?.addEventListener('click',()=>_showScript('ABLE HIGHER',_qWAH()));
   document.getElementById('btn-q-rev')?.addEventListener('click',()=>_showScript('REVISED ESTIMATE',_qRev()));
+  document.getElementById('btn-q-callup')?.addEventListener('click',()=>_showScript('CALLUP',_qCallup()));
+  document.getElementById('btn-q-cpdlc')?.addEventListener('click',()=>_showScript('CPDLC LOGON',_qCPDLC()));
+  document.getElementById('btn-q-divert')?.addEventListener('click',()=>_showScript('DIVERT',_qDivert()));
   document.getElementById('btn-q-copy')?.addEventListener('click',()=>{
     const txt=document.getElementById('quick-script-text');
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>{});
   });
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
-    const url=location.origin+location.pathname+'#glasses';
-    prompt('Open this URL in Web Scope on your G2:',location.origin+'/.netlify/functions/glasses');
+    const url=location.origin+'/.netlify/functions/glasses';
+    navigator.clipboard?.writeText(url).then(()=>{
+      const t=document.createElement('div');
+      t.textContent='Glasses URL copied!';
+      t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a3a1a;color:#50c878;padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;border:1px solid #3a6a3a';
+      document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+    }).catch(()=>prompt('Copy this URL:',url));
   });
 
   // GPS button
@@ -5729,7 +5925,15 @@ function bComms(){
     } else gen(null);
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');});
-  document.getElementById('btn-glasses')?.addEventListener('click',()=>{const url=location.origin+location.pathname+'#glasses';prompt('Open this URL in Web Scope on your G2:',location.origin+'/.netlify/functions/glasses');});
+  document.getElementById('btn-glasses')?.addEventListener('click',()=>{
+    const url=location.origin+'/.netlify/functions/glasses';
+    navigator.clipboard?.writeText(url).then(()=>{
+      const t=document.createElement('div');
+      t.textContent='Glasses URL copied!';
+      t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1a3a1a;color:#50c878;padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;border:1px solid #3a6a3a';
+      document.body.appendChild(t);setTimeout(()=>t.remove(),2500);
+    }).catch(()=>prompt('Copy this URL:',url));
+  });
 
 
   // Bind log
@@ -9271,7 +9475,26 @@ if(S.flightMode){
     else if(S.gps&&S.gps.lat!==undefined){centerOnLatLon(S.gps.lat,S.gps.lon,newScale,c);}
     else{zoomAt(c.offsetWidth/2,c.offsetHeight/2,0.8);mapRaf(c);}
   };
-  document.getElementById('flight-btn-ctr').onclick=()=>{mapState.offX=0;mapState.offY=0;saveMapState();const c=document.getElementById('map-canvas');if(c)drawMap(c);};
+  document.getElementById('flight-btn-ctr').onclick=()=>{
+    const wpts=S.fp.waypoints.filter(w=>w.lat!==undefined&&w.lon!==undefined);
+    const c=document.getElementById('map-canvas');
+    if(wpts.length>=2&&c){
+      const lats=wpts.map(w=>w.lat),lons=wpts.map(w=>w.lon);
+      const minLat=Math.min(...lats),maxLat=Math.max(...lats);
+      const minLon=Math.min(...lons),maxLon=Math.max(...lons);
+      const cLat=(minLat+maxLat)/2,cLon=(minLon+maxLon)/2;
+      const W=c.width/window.devicePixelRatio,H=c.height/window.devicePixelRatio;
+      const latSpan=Math.max(maxLat-minLat,5),lonSpan=Math.max(maxLon-minLon,10);
+      // Use _mapProj.bs if available, otherwise fallback
+      const bs=(_mapProj&&_mapProj.bs&&_mapProj.bs>0)?_mapProj.bs:8;
+      const scaleByLat=(H*0.8)/(latSpan*bs);
+      const scaleByLon=(W*0.8)/(lonSpan*bs*Math.cos(cLat*Math.PI/180));
+      mapState.scale=Math.max(Math.min(scaleByLat,scaleByLon,10),0.05);
+      mapState.offX=0;mapState.offY=0;
+      mapState.centerLat=cLat;mapState.centerLon=cLon;
+      saveMapState();drawMap(c);
+    } else {mapState.offX=0;mapState.offY=0;saveMapState();const c2=document.getElementById('map-canvas');if(c2)drawMap(c2);}
+  };
   document.getElementById('flight-btn-ac').onclick=()=>{
     const AC_SCALE=mapState.scale;
     if(S.gps&&S.gps.lat!==null&&S.gps.lat!==undefined){centerOnLatLon(S.gps.lat,S.gps.lon,AC_SCALE);}
