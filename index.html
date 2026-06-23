@@ -559,14 +559,14 @@ const DEF=()=>({
   activePanel:null, // 'fixes','comms','log','timer','checklist','settings' or null
   fp:{callsign:'',type:'',dep:'',dest:'',level:'',mach:'',selcal:'',
       trackType:'random',trackLetter:'',tmi:'',takeoff:'',landingTime:'',slop:0,origWaypoints:null,coastOutIdx:-1,coastInIdx:-1,oepIdx:-1,oxfIdx:-1,
-      altn1:'',altn2:'',ableFl:'',etpManual:'',engineOutMach:'',waypoints:[],
+      altn1:'',altn2:'',ableFl:'',etpManual:'',engineOutMach:'',sob:'',waypoints:[],
       takeoffFuel:'',
       callupEntryFix:'',callupEntryTime:'',callupFmsPos:'',
       _dctOriginLat:null,_dctOriginLon:null, // anchor for DCT line
   },
   checklist:{items:{}}, // keyed by item id, value true/false
   reports:[],
-  posrep:{position:'',time:'',altitude:'',nextWpt:'',nextEta:'',wptAfter:'',
+  posrep:{position:'',time:'',altitude:'',nextWpt:'',nextEta:'',wptAfter:'',turb:'',icing:'',
           oat:'',wind:'',remarks:'',lat:'',lon:'',fixPhoto:null,ipadDisplay:'',ipadLat:null,ipadLon:null},
   timer:{secs:600,preset:600,running:false,iid:null,alarmEnabled:true,
          warnFired:false,repeatIid:null,alarmAt:null},
@@ -576,7 +576,7 @@ const DEF=()=>({
   gps:{lat:null,lon:null,acc:null,speed:null,ts:null,watchId:null},
   gpsTrail:[],
   autoMarkEnabled:true,
-  mapToggles:{firBounds:true,latLonGrid:true,natTracks:true},
+  mapToggles:{firBounds:true,latLonGrid:true,natTracks:true,natDir:'both'},
   pendingMarks:[],
   mapSelWpt:null,
   natTracks:{
@@ -3833,7 +3833,7 @@ function vPlan(){
           }).join('');
         })()}
       </div>
-      ${fld('feom','Engine-Out Speed (if different)',(fp.engineOutMach||'').replace('M.',''),'e.g. 74','inputmode="numeric" pattern="[0-9]*"')}
+      <div class="fld"><label class="lbl">Engine-Out Speed (if different)</label><div style="display:flex;align-items:center;gap:0"><span style="font-size:16px;color:#7dcfff;padding:10px 4px 10px 10px;background:#0d1a2a;border:1px solid #1e3a5f;border-right:none;border-radius:4px 0 0 4px">M.</span><input id="feom" value="${esc((fp.engineOutMach||'').replace('M.',''))}" placeholder="74" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autocorrect="off" spellcheck="false" style="font-size:16px;padding:10px;border-radius:0 4px 4px 0;width:80px"></div></div>
       ${fld('fetp','Manual ETP Override (optional)',fp.etpManual||'','Waypoint name or N5000 W03000')}
       <div id="etp-st" style="font-size:11px;color:#4a7a9a;min-height:16px"></div>
     </div>
@@ -3842,7 +3842,7 @@ function vPlan(){
         ${fldUC('fc','Callsign',fp.callsign,'UAL123','oninput="this.value=this.value.toUpperCase();S.fp.callsign=this.value;saveAll()"')}${fldUC('ft','Aircraft Type',fp.type,'e.g. F900, B77W','oninput="this.value=this.value.toUpperCase();S.fp.type=this.value;saveAll()"')}
         ${fldUC('fd','Departure',fp.dep,'KLAX')}${fldUC('fds','Destination',fp.dest,'EGLL')}
         ${fldUC('fl','Filed Flight Level',fp.level,'FL390','oninput="this.value=this.value.toUpperCase();S.fp.level=this.value;saveAll()"')}${fldUC('fafl','Able FL at Coast Out',fp.ableFl||'','e.g. FL400','oninput="this.value=this.value.toUpperCase();S.fp.ableFl=this.value;saveAll()"')}<div class="fld"><label class="lbl">Mach</label><div style="display:flex;align-items:center;gap:0"><span style="background:#060d18;border:1px solid #1e3a5f;border-right:none;border-radius:3px 0 0 3px;padding:8px 6px 8px 10px;color:#4fc3f7;font-size:13px;font-weight:bold">M.</span><input id="fm" value="${esc((fp.mach||'').replace(/^M\.?/i,''))}" placeholder="82" style="border-radius:0 3px 3px 0;border-left:none;flex:1"></div></div>
-        ${fldUC('fs','SELCAL',fp.selcal,'AB-CD','oninput="var v=this.value.toUpperCase().replace(/[^A-Z]/g,\'\');if(v.length>2)v=v.slice(0,2)+\'-\'+v.slice(2,4);this.value=v;S.fp.selcal=v;saveAll()"')}${fld('ftmi','TMI',fp.tmi||'','e.g. 217','oninput="S.fp.tmi=this.value;saveAll()"')}
+        ${fldUC('fs','SELCAL',fp.selcal,'AB-CD','oninput="var v=this.value.toUpperCase().replace(/[^A-Z]/g,\'\');if(v.length>2)v=v.slice(0,2)+\'-\'+v.slice(2,4);this.value=v;S.fp.selcal=v;saveAll()"')}${fld('ftmi','TMI',fp.tmi||'','e.g. 217','oninput="S.fp.tmi=this.value;saveAll()"')}${fld('fsob','Souls on Board',fp.sob||'','e.g. 8','inputmode="numeric" pattern="[0-9]*" oninput="S.fp.sob=this.value;saveAll()"')}
       </div>
       <!-- Takeoff time set via MARK TAKEOFF button on Progress tab -->
       ${trackSel}${slopSel}
@@ -3865,7 +3865,7 @@ function vPlan(){
 }
 
 function bPlan(){
-  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',fetp:'etpManual'}; // fc,ft,fl,fs,ftmi now use oninput
+  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',fetp:'etpManual',fsob:'sob'}; // fc,ft,fl,fs,ftmi now use oninput
   Object.entries(FM).forEach(([id,k])=>document.getElementById(id)?.addEventListener('input',e=>{
     // Force uppercase for identifier fields
     const UC=['fd','fds','fc','ft','fa1','fa2','fl','fs','ftmi'];
@@ -4195,6 +4195,15 @@ function dctFromHere(i){
     // Anchor DCT line to current GPS — don't follow aircraft as it moves
     if(hasGPS){S.fp._dctOriginLat=S.gps.lat;S.fp._dctOriginLon=S.gps.lon;}
     else{S.fp._dctOriginLat=null;S.fp._dctOriginLon=null;}
+    // Recalc ETA to DCT fix from current GPS position
+    if(hasGPS&&w.lat!==undefined){
+      const fromCoord={lat:S.gps.lat,lon:S.gps.lon};
+      const r=calcETA(fromCoord,w.name,utcNow(),S.fp.waypoints,S.fp.mach,S.posrep.altitude||S.fp.level,S.posrep.wind||'');
+      if(r){
+        S.posrep.position='';S.posrep.nextWpt=w.name;
+        if(!w.eto)S.posrep.nextEta=r.eta;
+      }
+    }
     saveAll();renderCon();
     var _mc=document.getElementById('map-canvas');if(_mc)drawMap(_mc);
   });
@@ -4661,6 +4670,10 @@ function vProg(){
         })():'' }
         ${S.fp.coastInIdx===i?'<span style="font-size:9px;background:#003a1a;border:1px solid #00d46a;color:#00d46a;border-radius:2px;padding:1px 5px;margin-left:2px">COAST IN</span>':''}
         ${w.bypassed?'<span style="font-size:9px;color:#4a4a8a;margin-left:4px;border:1px solid #2a2a5a;border-radius:2px;padding:0 4px">DCT</span>':done?`<span style="font-size:9px;color:#90ee90;margin-left:4px">✓${esc(w.actualTime)}Z</span>`:''}
+        ${w.eto
+          ?`<span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 5px;margin-left:2px">⏱${w.eto}Z</span>`
+          :`<span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 5px;margin-left:2px">+ETO</span>`
+        }
         ${photo}
         <span style="color:#2a4a6a;margin-left:4px">${exp?'▲':'▼'}</span>
       </div>
@@ -4974,8 +4987,15 @@ function fillPR(i,overrideTime,ipadLat,ipadLon){
   }
   if(w.wind)S.posrep.wind=w.wind;
   if(w.lat!==undefined&&S.posrep.nextWpt){
-    const r=calcETA({lat:w.lat,lon:w.lon},S.posrep.nextWpt,t,fp.waypoints,fp.mach,S.posrep.altitude||fp.level,w.wind||S.posrep.wind||'');
-    if(r)S.posrep.nextEta=r.eta;
+    // Only auto-calc if next waypoint has no manually entered ETO
+    const nextWptObj=fp.waypoints.find(x=>x.name===S.posrep.nextWpt);
+    if(!nextWptObj||!nextWptObj.eto){
+      const r=calcETA({lat:w.lat,lon:w.lon},S.posrep.nextWpt,t,fp.waypoints,fp.mach,S.posrep.altitude||fp.level,w.wind||S.posrep.wind||'');
+      if(r)S.posrep.nextEta=r.eta;
+    } else {
+      // Use manually entered ETO from waypoint
+      S.posrep.nextEta=nextWptObj.eto;
+    }
   }
   if(w.fixPhoto)S.posrep.fixPhoto=w.fixPhoto;
 }
@@ -5033,7 +5053,7 @@ function vPosrep(){
     const wind=r.wind?'\nWIND '+r.wind:'';
     const rmk=r.remarks&&r.remarks.toLowerCase()!=='nil'?'\nREMARKS: '+r.remarks.toUpperCase():'';
     const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
-    return `${st}, ${cs}, POSITION ON ${primaryFreq}\n\n[WAIT FOR ATC]\n\n${cs}\nPOSITION ${pos.toUpperCase()}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${slop}${rmk}\nOVER\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
+    return `${st}, ${cs}, POSITION ON ${primaryFreq}\n\n[WAIT FOR ATC — WHEN TOLD "GO AHEAD":]\n\n${cs}\nPOSITION ${pos.toUpperCase()}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${turb}${icing}${slop}${rmk}\nOVER\n\n[IF FIRST HF CONTACT — ALSO SAY: SELCAL ${(fp.selcal||"[SELCAL]").toUpperCase()}]\n\n[IF RANDOM ROUTE — MIDPOINT WEATHER REQUIRED AT NEXT REPORT:\nMID TEMP: [OAT AT MIDPOINT]\nMID WIND: [WIND AT MIDPOINT]\nMID WIND POSITION: [MIDPOINT COORDS]]\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
   }
   function qSelcal(){
     const stId=S.selStation?S.selStation.id:'';
@@ -5216,7 +5236,7 @@ function vPosrep(){
 }
 function bPosrep(){
   const FM={rla:'lat',rlo:'lon',rpos:'position',rtm:'time',ralt:'altitude',
-    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',rwd:'wind',rrm:'remarks'};
+    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',roat:'oat',rwd:'wind',rrm:'remarks',rturb:'turb',ricing:'icing'};
   Object.entries(FM).forEach(([id,k])=>{
     const el=document.getElementById(id);if(!el)return;
     el.addEventListener('input',e=>{
@@ -5262,7 +5282,7 @@ function bPosrep(){
     const wind=r.wind?'\nWIND '+r.wind:'';
     const rmk=r.remarks&&r.remarks.toLowerCase()!=='nil'?'\nREMARKS: '+r.remarks.toUpperCase():'';
     const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
-    return `${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC]\n\n${cs}\nPOSITION ${pos.toUpperCase()}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${slop}${rmk}\nOVER\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
+    return `${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC — WHEN TOLD "GO AHEAD":]\n\n${cs}\nPOSITION ${pos.toUpperCase()}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${turb}${icing}${slop}${rmk}\nOVER\n\n[IF FIRST HF CONTACT — ALSO SAY: SELCAL ${(fp.selcal||"[SELCAL]").toUpperCase()}]\n\n[IF RANDOM ROUTE — MIDPOINT WEATHER REQUIRED AT NEXT REPORT:\nMID TEMP: [OAT AT MIDPOINT]\nMID WIND: [WIND AT MIDPOINT]\nMID WIND POSITION: [MIDPOINT COORDS]]\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
   }
   function _qSelcal(){
     const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
@@ -5394,6 +5414,9 @@ function recompETA(){
   const from=parsLL(r.lat,r.lon);
   if(!from||!r.nextWpt||r.time.length<4){S.etaCalc=null;_updateETADisplay();return;}
   const res=calcETA(from,r.nextWpt,r.time,fp.waypoints,fp.mach,r.altitude||fp.level,r.wind);
+  // Don't overwrite manually entered ETO
+  const _nw=fp.waypoints.find(x=>x.name===r.nextWpt);
+  if(_nw&&_nw.eto){S.etaCalc=null;_updateETADisplay();return;}
   S.etaCalc=res;if(res){S.posrep.nextEta=res.eta;
     // Update nextEta field directly without full re-render
     const neEl=document.getElementById('rne');
@@ -5610,8 +5633,15 @@ function vComms(){
 
     <div class="sec">
       ${H('Met / Remarks')}
-      <div class="fld"><label class="lbl">Wind</label><input id="rwd" value="${esc(r.wind)}" placeholder="270/45" style="${iStyle}" ${iAttr}></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div class="fld"><label class="lbl">OAT (°C)</label><input id="roat" value="${esc(r.oat||'')}" placeholder="-56" style="${iStyle}" ${iAttr}></div>
+        <div class="fld"><label class="lbl">Wind</label><input id="rwd" value="${esc(r.wind)}" placeholder="270/45" style="${iStyle}" ${iAttr}></div>
+      </div>
       <div class="fld"><label class="lbl">Remarks</label><input id="rrm" value="${esc(r.remarks)}" placeholder="Nil" style="${iStyle}" ${iAttr}></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div class="fld"><label class="lbl">Turbulence</label><input id="rturb" value="${esc(r.turb||'')}" placeholder="NIL" style="${iStyle}text-transform:uppercase" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"></div>
+        <div class="fld"><label class="lbl">Icing</label><input id="ricing" value="${esc(r.icing||'')}" placeholder="NIL" style="${iStyle}text-transform:uppercase" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"></div>
+      </div>
     </div>
 
     <div class="sec">
@@ -5756,7 +5786,7 @@ function _qDivert(){
   } else if(fp.altn1){
     divertTo=fp.altn1;divertICAO=fp.altn1;
   }
-  return`${st}, ${cs}, PAN PAN, PAN PAN, PAN PAN.\n\n[WAIT FOR ATC]\n\n${cs},\nDIVERTING TO ${divertTo}${divertICAO?' ('+divertICAO+')':''},\nPRESENT POSITION,\nDESCENDING ${fl},\nSOULS ON BOARD [POB],\nFUEL REMAINING [HH+MM],\nOVER.`;
+  return`${st}, ${cs}, PAN PAN, PAN PAN, PAN PAN.\n\n[WAIT FOR ATC]\n\n${cs},\nDIVERTING TO ${divertTo}${divertICAO?' ('+divertICAO+')':''},\nPRESENT POSITION,\nDESCENDING ${fl},\nSOULS ON BOARD ${fp.sob||'[POB]'},\nFUEL REMAINING [HH+MM],\nOVER.`;
   }
 
 function _showScript(label,text){
@@ -5785,9 +5815,11 @@ function _qPos(){
   const wa=(r.wptAfter||'[FIX AFTER]').toUpperCase();
   const oat=r.oat?'\nTEMPERATURE '+(parseFloat(r.oat)<0?'MINUS':'PLUS')+' '+Math.abs(parseFloat(r.oat)||0)+' CELSIUS':'';
   const wind=r.wind?'\nWIND '+r.wind:'';
+  const turb=r.turb&&r.turb.toLowerCase()!=='nil'?'\nTURBULENCE '+r.turb.toUpperCase():'\nTURBULENCE NIL';
+  const icing=r.icing&&r.icing.toLowerCase()!=='nil'?'\nICING '+r.icing.toUpperCase():'\nICING NIL';
   const rmk=r.remarks&&r.remarks.toLowerCase()!=='nil'?'\nREMARKS: '+r.remarks.toUpperCase():'';
   const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
-  return`${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC]\n\n${cs}\nPOSITION ${pos}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${slop}${rmk}\nOVER\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
+  return`${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC — "GO AHEAD"]\n\n${cs}\nPOSITION ${pos}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${turb}${icing}${slop}${rmk}\nOVER\n\n[IF FIRST HF CONTACT — ALSO SAY: SELCAL ${(fp.selcal||"[SELCAL]").toUpperCase()}]\n\n[IF RANDOM ROUTE — MIDPOINT WEATHER REQUIRED AT NEXT REPORT:\nMID TEMP: [OAT AT MIDPOINT]\nMID WIND: [WIND AT MIDPOINT]\nMID WIND POSITION: [MIDPOINT COORDS]]\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
 }
 function _qSelcal(){
   const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
@@ -5821,7 +5853,7 @@ function _qRev(){
 function bComms(){
   // Field bindings
   const FM={rla:'lat',rlo:'lon',rpos:'position',rtm:'time',ralt:'altitude',
-    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',rwd:'wind',rrm:'remarks'};
+    rnw:'nextWpt',rne:'nextEta',rwa:'wptAfter',roat:'oat',rwd:'wind',rrm:'remarks',rturb:'turb',ricing:'icing'};
   Object.entries(FM).forEach(([id,k])=>{
     const el=document.getElementById(id);if(!el)return;
     el.addEventListener('input',e=>{
@@ -6354,6 +6386,18 @@ function vMap(){
             'background:'+(on?'#0a2040':'#060d18')+';border:1px solid '+(on?'#4fc3f7':'#1e3a5f')+';'+
             'color:'+(on?'#4fc3f7':'#2a4a6a')+'">'+
             (on?'● ':'○ ')+labels[k]+'</button>';
+        }).join('')}
+      </div>
+      <!-- NAT direction filter -->
+      <div style="display:flex;gap:6px;margin-top:4px">
+        ${['both','east','west'].map(function(d){
+          var cur=(S.mapToggles||{}).natDir||'both';
+          var on=cur===d;
+          var labels={both:'BOTH DIRS',east:'EASTBOUND',west:'WESTBOUND'};
+          return '<button onclick="S.mapToggles.natDir=\''+d+'\';saveAll();var c=document.getElementById(\'map-canvas\');if(c)drawMap(c);" '+
+            'style="font-size:9px;padding:5px 8px;border-radius:3px;cursor:pointer;font-weight:bold;letter-spacing:.05em;'+
+            'background:'+(on?'#0a2040':'#060d18')+';border:1px solid '+(on?'#4fc3f7':'#1e3a5f')+';'+
+            'color:'+(on?'#4fc3f7':'#2a4a6a')+'">'+(on?'● ':'○ ')+labels[d]+'</button>';
         }).join('')}
       </div>
       <div style="display:none"><!-- dummy to close the flex --></div
@@ -7198,6 +7242,10 @@ function parseNTMText(raw){
     } else {
       i++;
     }
+  }
+  // Filter tracks by direction if toggle set
+  if((S.mapToggles||{}).natDir&&S.mapToggles.natDir!=='both'){
+    tracks=tracks.filter(function(t){return t.direction===S.mapToggles.natDir;});
   }
   // Sort tracks: east tracks Z→A, west tracks A→Z
   tracks.sort(function(a,b){
@@ -8454,7 +8502,7 @@ function drawFIRBoundaries(ctx,proj,W,H2){
     (seg.l||[]).forEach(function(lb){
       var lp=proj(lb.a,lb.o);
       if(lp.x<-30||lp.x>W+30||lp.y<-15||lp.y>H2+15)return;
-      ctx.font='bold 9px monospace';
+      ctx.font='bold 10px monospace';
       var tw=ctx.measureText(lb.t).width;
       ctx.fillStyle='rgba(0,0,0,0.82)';
       ctx.fillRect(lp.x-tw/2-3,lp.y-10,tw+6,13);
@@ -8692,10 +8740,15 @@ function drawLandmasses(ctx,proj,W,H2){
     }
     etpAll.forEach(function(e,i){
       const side=i%2===0?'right':'left';
-      // Medical ETP — use normal cruise speed (same as OEI but at cruise speed)
-      // We don't have a separate medical calc yet — show OEI as primary
-      if(e.oei)drawETPTick(e.oei.lat,e.oei.lon,'#ff8c00','EO'+(etpAll.length>1?'.'+(i+1):''),side);
-      if(e.dep)drawETPTick(e.dep.lat,e.dep.lon,'#ff4444','DEPRESS'+(etpAll.length>1?'.'+(i+1):''),side==='right'?'left':'right');
+      function fmtMin(m){if(!m)return'';const h=Math.floor(m/60);const mm=Math.round(m%60);return h>0?h+'h'+String(mm).padStart(2,'0')+'m':mm+'m';}
+      if(e.oei){
+        const lbl='ENG/'+(e.altnA||'?')+' '+fmtMin(e.oei.timeToA);
+        drawETPTick(e.oei.lat,e.oei.lon,'#ff8c00',lbl,side);
+      }
+      if(e.dep){
+        const lbl='PRESS/'+(e.altnA||'?')+' '+fmtMin(e.dep.timeToA);
+        drawETPTick(e.dep.lat,e.dep.lon,'#ff4444',lbl,side==='right'?'left':'right');
+      }
     });
   })();
 
