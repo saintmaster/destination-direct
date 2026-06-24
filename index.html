@@ -5582,6 +5582,16 @@ function vComms(){
         ${btn('by','btn-q-wah','✈ ABLE HIGHER','font-size:11px;padding:11px 6px')}
         ${btn('bo','btn-q-rev','🔄 REVISED ETA','font-size:11px;padding:11px 6px')}
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;align-items:end">
+        <div class="fld">
+          <label class="lbl" style="font-size:9px;color:#ff8c00">COAST-OUT FIX</label>
+          <input id="q-oef" value="${esc(fp.callupEntryFix||fp.coastOutIdx>=0&&fp.waypoints[fp.coastOutIdx]?fp.waypoints[fp.coastOutIdx].name:fp.callupEntryFix||'')}" placeholder="e.g. NICSO" style="font-size:14px;padding:8px;text-transform:uppercase" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false">
+        </div>
+        <div class="fld">
+          <label class="lbl" style="font-size:9px;color:#ff8c00">ETO AT COAST-OUT (Z)</label>
+          <input id="q-oet" value="${esc(fp.callupEntryTime||fp.coastOutIdx>=0&&fp.waypoints[fp.coastOutIdx]?fp.waypoints[fp.coastOutIdx].eto||'':fp.callupEntryTime||'')}" placeholder="HHMM" inputmode="numeric" pattern="[0-9]*" style="font-size:14px;padding:8px">
+        </div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
         ${btn('bg','btn-q-callup','📻 CALLUP','font-size:10px;padding:10px 4px')}
         ${btn('bg','btn-q-cpdlc','🖥 CPDLC','font-size:10px;padding:10px 4px')}
@@ -5885,6 +5895,25 @@ function bComms(){
   document.getElementById('btn-q-selcal')?.addEventListener('click',()=>_showScript('SELCAL CHECK',_qSelcal()));
   document.getElementById('btn-q-wah')?.addEventListener('click',()=>_showScript('ABLE HIGHER',_qWAH()));
   document.getElementById('btn-q-rev')?.addEventListener('click',()=>_showScript('REVISED ESTIMATE',_qRev()));
+  document.getElementById('q-oef')?.addEventListener('input',e=>{S.fp.callupEntryFix=e.target.value.toUpperCase();saveAll();});
+  document.getElementById('q-oet')?.addEventListener('input',e=>{
+    const v=e.target.value.replace(/[^0-9]/g,'').slice(0,4);
+    S.fp.callupEntryTime=v;
+    // Also save to the coastOut waypoint eto
+    if(S.fp.coastOutIdx>=0&&S.fp.waypoints[S.fp.coastOutIdx]){
+      S.fp.waypoints[S.fp.coastOutIdx].eto=v||undefined;
+    }
+    saveAll();
+  });
+  document.getElementById('q-oef')?.addEventListener('input',function(e){S.fp.callupEntryFix=e.target.value.toUpperCase();saveAll();});
+  document.getElementById('q-oet')?.addEventListener('input',function(e){
+    var v=e.target.value.replace(/[^0-9]/g,'').slice(0,4);
+    S.fp.callupEntryTime=v;
+    if(S.fp.coastOutIdx>=0&&S.fp.waypoints[S.fp.coastOutIdx]){
+      S.fp.waypoints[S.fp.coastOutIdx].eto=v||undefined;
+    }
+    saveAll();
+  });
   document.getElementById('btn-q-callup')?.addEventListener('click',()=>_showScript('CALLUP',_qCallup()));
   document.getElementById('btn-q-cpdlc')?.addEventListener('click',()=>_showScript('CPDLC LOGON',_qCPDLC()));
   document.getElementById('btn-q-divert')?.addEventListener('click',()=>_showScript('DIVERT',_qDivert()));
