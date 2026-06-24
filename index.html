@@ -5749,6 +5749,8 @@ function _qCallup(){
 
   // Voice fallback
   s+='\n\nVOICE (if ACARS unavail):\n';
+  s+=`${st}, ${cs}, ON ${primaryFreq}.\n`;
+  s+='\n[WAIT FOR ATC RESPONSE]\n\n';
   s+=`${st}, ${cs},\n`;
   s+=`ESTIMATING ${oef} AT ${oefETO},\n`;
   s+=`REQUEST ${mach}, ${lvl},\n`;
