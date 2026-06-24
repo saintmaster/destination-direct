@@ -2469,8 +2469,9 @@ function enterFlightMode(){
     const newScale=mapState.scale*1.25;
     if(_selFixLat!==null&&_selFixLon!==null){
       centerOnLatLon(_selFixLat,_selFixLon,newScale,c);
+    } else if(mapState.centerLat!==undefined&&mapState.centerLon!==undefined){
+      centerOnLatLon(mapState.centerLat,mapState.centerLon,newScale,c);
     } else {
-      // Zoom in place — don't jump to GPS
       zoomAt(c.offsetWidth/2,c.offsetHeight/2,1.25);mapRaf(c);
     }
   };
@@ -2479,8 +2480,9 @@ function enterFlightMode(){
     const newScale=mapState.scale*0.8;
     if(_selFixLat!==null&&_selFixLon!==null){
       centerOnLatLon(_selFixLat,_selFixLon,newScale,c);
+    } else if(mapState.centerLat!==undefined&&mapState.centerLon!==undefined){
+      centerOnLatLon(mapState.centerLat,mapState.centerLon,newScale,c);
     } else {
-      // Zoom in place — don't jump to GPS
       zoomAt(c.offsetWidth/2,c.offsetHeight/2,0.8);mapRaf(c);
     }
   };
@@ -2974,16 +2976,21 @@ function extractCoordsFromOCR(text){
   // Tesseract may mangle ° or * as * ' ` > . or space; W may appear as Wo/woss
   // This runs BEFORE any other processing — if we find Position: we're done.
   function tryPositionLine(raw){
-    const lines=raw.split('\n');
+    // First try: join all lines and search for Position: pattern across line breaks
+    const allText=raw.replace(/\n/g,' ');
+    const lines=[allText, ...raw.split('\n')];
     for(const line of lines){
       // Must contain "position" (case-insensitive, allow OCR noise like "Pos1tion")
       if(!/pos.{0,3}tion/i.test(line))continue;
-      // Normalize the line: collapse degree/separator chars, fix common misreads
+      // Normalize aggressively: collapse all non-alphanumeric except . into space
       let l=line
         .replace(/woss/gi,'W').replace(/\bWo(\d)/g,'W$1')
-        .replace(/[°*'`>]/g,' ')
+        .replace(/[°*'`>|]/g,' ')
         .replace(/O(?=\d)/g,'0')
         .replace(/\bl\b/gi,'1')
+        // Remove OCR noise words between coordinate parts
+        .replace(/\b(ak|alla|ay|ae|pam|von|pos|tic|seske|ition|nav|sbas|enroute|on)\b/gi,' ')
+        .replace(/\s+/g,' ')
         .toUpperCase();
       // Match N<deg><min> W/E<deg><min> — very permissive spacing
       const m=l.match(/([NS])\s*(\d{1,2})\s+(\d{2}\.\d{1,3})\s+([EW])\s*(\d{1,3})\s+(\d{2}\.\d{1,3})/);
