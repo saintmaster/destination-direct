@@ -5100,7 +5100,7 @@ function vPosrep(){
     return s;
   }
   function qAbleHigher(){
-    const afl=(fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+    const afl=(fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
     const nw=(r.nextWpt||'[NEXT FIX]').toUpperCase();
     return `${cs} ABLE ${afl} AT ${nw}.`;
   }
@@ -5332,7 +5332,7 @@ function bPosrep(){
   }
   function _qWAH(){
     const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
-    const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+    const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
     const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
     return `${cs} ABLE ${afl} AT ${nw}.`;
   }
@@ -5717,9 +5717,9 @@ function _qCallup(){
   const oepWpt=_oepIdx>=0?fp.waypoints[_oepIdx]:null;
   const oef=oepWpt?oepWpt.name:(fp.callupEntryFix||'[OEP]');
   const oefETO=oepWpt&&oepWpt.eto?oepWpt.eto+'Z':(fp.callupEntryTime?fp.callupEntryTime+'Z':'[HHMM]Z');
-  const lvl=(fp.level||'[FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const lvl=(fp.level||'[FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
   const mach=fp.mach||'[MACH]';
-  const ableLvl=(fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const ableLvl=(fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
   const tmi=fp.tmi||'[TMI]';
   const selcal=fp.selcal||'[SELCAL]';
   const isTrack=fp.trackType!=='random'&&fp.trackLetter;
@@ -5757,11 +5757,15 @@ function _qCallup(){
 
   // ── STEP 2: HF INITIAL CONTACT + SELCAL ─────────────────────────────────
   s+='\n\n-- STEP 2: HF INITIAL CONTACT (closer to OEP) --\n';
+  s+=`${st}, ${cs}, ON ${primaryFreq}.`;
+  s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
   s+=`${st}, ${cs}`;
   if(nextFir)s+=', '+nextFir;
   s+=`, SELCAL CHECK ${selcal}.`;
   s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
-  s+=`${cs}, SELCAL CHECK OK.`;
+  s+=`${cs}, SELCAL CHECK OK`;
+  if(nextFir)s+=', '+nextFir;
+  s+=', PRIMARY [FREQ], SECONDARY [FREQ].';
 
   if(isGander){
     s+='\n\n[FLY DOMESTIC CLEARANCE INTO OCEANIC]\n';
@@ -5777,7 +5781,13 @@ function _qCallup(){
     } else {
       const oepI=fp.oepIdx>=0?fp.oepIdx:(fp.coastOutIdx>=0?fp.coastOutIdx:0);
       const oxfI=fp.oxfIdx>=0?fp.oxfIdx:fp.waypoints.length-1;
-      const rteWpts=fp.waypoints.filter((w,wi)=>wi>=oepI&&wi<=oxfI&&!w.bypassed&&w.name).map(w=>w.name).join(' ');
+      // Exclude destination airport from route string
+      const rteWpts=fp.waypoints.filter((w,wi)=>{
+        if(wi<oepI||wi>oxfI||w.bypassed||!w.name)return false;
+        // Skip if this waypoint is the destination
+        if(fp.dest&&w.name.toUpperCase()===fp.dest.toUpperCase())return false;
+        return true;
+      }).map(w=>w.name).join(' ');
       s+=`${cs} CLEARED TO ${dest}\n`;
       s+=`VIA ${rteWpts||'[ROUTE]'},\n`;
       s+=`FROM ${oef} MAINTAIN ${lvl},\n`;
@@ -5803,7 +5813,7 @@ function _qDivert(){
   const fp=S.fp;
   const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
   const st=S.selStation?S.selStation.call:'[STATION]';
-  const fl=(fp.level||'[FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const fl=(fp.level||'[FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
   // Determine nearest alternate based on current position vs ETP
   let divertTo='[ALTERNATE]';
   let divertICAO='';
@@ -5869,17 +5879,23 @@ function _qSelcal(){
   const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
   const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
   const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
-  let s=`${st}, ${cs}, SELCAL CHECK`;
-  if(nextFirName)s+=', '+nextFirName;s+='.';
-  s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
-  if(isGander){s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;}
-  else if(isShanwick){s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
-  else{s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;}
+  // Initial call with frequency
+  let s=`${st}, ${cs}, ON ${pf1}.`;
+  s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
+  s+=`${st}, ${cs}, SELCAL CHECK`;
+  if(nextFirName)s+=', '+nextFirName;
+  s+='.';
+  s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
+  s+=`${cs}, SELCAL CHECK OK`;
+  if(nextFirName)s+=', '+nextFirName;
+  if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
+  else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+  else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
   return s;
 }
 function _qWAH(){
   const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
-  const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL ').toUpperCase();
+  const afl=(S.fp.ableFl||'[ABLE FL]').replace(/FL\s*/i,'FL').trim().toUpperCase();
   const nw=(S.posrep.nextWpt||'[NEXT FIX]').toUpperCase();
   return`[OPTIONAL — only if ATC requests or operationally useful per NAT Doc 007 V.2026-1]\n\n${cs}, WHEN ABLE ${afl}.`;
 }
