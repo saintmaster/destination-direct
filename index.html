@@ -2471,6 +2471,7 @@ function enterFlightMode(){
     }
   };
   document.getElementById('flight-btn-ctr').onclick=()=>{
+    _selFixLat=null;_selFixLon=null;
     // Zoom to fit entire flight plan
     const wpts=S.fp.waypoints.filter(w=>w.lat!==undefined&&w.lon!==undefined);
     const c=document.getElementById('map-canvas');
@@ -9566,6 +9567,7 @@ if(S.flightMode){
     else{zoomAt(c.offsetWidth/2,c.offsetHeight/2,0.8);mapRaf(c);}
   };
   document.getElementById('flight-btn-ctr').onclick=()=>{
+    _selFixLat=null;_selFixLon=null;
     const wpts=S.fp.waypoints.filter(w=>w.lat!==undefined&&w.lon!==undefined);
     const c=document.getElementById('map-canvas');
     if(wpts.length>=2&&c){
