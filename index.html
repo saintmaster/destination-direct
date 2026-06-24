@@ -1865,7 +1865,7 @@ async function promptWptETO(idx){
   const clean=val.replace(/[^0-9]/g,'').slice(0,4);
   S.fp.waypoints[idx].eto=clean||undefined;
   // If this is the OEP, auto-update callupEntryFix and callupEntryTime
-  if(idx===S.fp.oepIdx){
+  if(idx===S.fp.oepIdx||idx===S.fp.coastOutIdx){
     S.fp.callupEntryFix=w.name;
     if(clean)S.fp.callupEntryTime=clean;
   }
@@ -5679,7 +5679,8 @@ function _qCallup(){
   const isReykjavik=stId==='BIRD';
   const primaryFreq=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
   // Get OEP from waypoints
-  const oepWpt=fp.oepIdx>=0?fp.waypoints[fp.oepIdx]:null;
+  const _oepIdx=fp.oepIdx>=0?fp.oepIdx:(fp.coastOutIdx>=0?fp.coastOutIdx:-1);
+  const oepWpt=_oepIdx>=0?fp.waypoints[_oepIdx]:null;
   const oef=oepWpt?oepWpt.name:(fp.callupEntryFix||'[OEP]');
   const oefETO=oepWpt&&oepWpt.eto?oepWpt.eto+'Z':(fp.callupEntryTime?fp.callupEntryTime+'Z':'[HHMM]Z');
   const lvl=(fp.level||'[FL]').replace(/FL\s*/i,'FL ').toUpperCase();
