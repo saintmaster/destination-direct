@@ -5742,7 +5742,7 @@ function _qCallup(){
   // RMK/2ND NAT only if user has backup track preference
   // Track route: include track letter in main field, no RMK prefix needed
   // Random route: just F[level] MAX FL[able], no RMK
-  const acarsRmk=isTrack?`-${cpdlcFL} MAX ${cpdlcMaxFL}`:`-${cpdlcFL} MAX ${cpdlcMaxFL}`;
+  const acarsRmk=`-MAX ${cpdlcMaxFL}`;
   s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}${acarsRmk}`;
   if(isGander)s+='\n\n[EXPECT: RCL RECEIVED — NOT A CLEARANCE]';
   else if(isShanwick)s+='\n\n[IF NO RESPONSE IN 15 MIN — OR NO CLEARANCE BY 30 MIN BEFORE OEP — USE VOICE BELOW]';
