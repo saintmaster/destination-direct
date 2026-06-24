@@ -6461,7 +6461,7 @@ function vMap(){
           return '<button data-toggle="'+k+'" onclick="toggleMapLayer(\''+k+'\')" '+
             'style="font-size:9px;padding:5px 8px;border-radius:3px;cursor:pointer;font-weight:bold;letter-spacing:.05em;'+
             'background:'+(on?'#0a2040':'#060d18')+';border:1px solid '+(on?'#4fc3f7':'#1e3a5f')+';'+
-            'color:'+(on?'#4fc3f7':'#2a4a6a')+'">'+
+            'color:'+(on?'#4fc3f7':'#5a7a9a')+'">'+
             (on?'● ':'○ ')+labels[k]+'</button>';
         }).join('')}
       </div>
@@ -6471,7 +6471,8 @@ function vMap(){
           var cur=(S.mapToggles||{}).natDir||'both';
           var on=cur===d;
           var labels={both:'BOTH DIRS',east:'EASTBOUND',west:'WESTBOUND'};
-          return '<button onclick="S.mapToggles.natDir=\''+d+'\';saveAll();var c=document.getElementById(\'map-canvas\');if(c)drawMap(c);" '+
+          return '<button onclick="S.mapToggles.natDir=\''+d+'\';saveAll();var c=document.getElementById(\'map-canvas\');if(c)drawMap(c);document.querySelectorAll(\'.natdir-btn\').forEach(function(b){var bd=b.getAttribute(\'data-dir\');b.style.background=bd===S.mapToggles.natDir?\'#0a2040\':\'#060d18\';b.style.borderColor=bd===S.mapToggles.natDir?\'#4fc3f7\':\'#1e3a5f\';b.style.color=bd===S.mapToggles.natDir?\'#4fc3f7\':\'#2a4a6a\';b.textContent=(bd===S.mapToggles.natDir?\'● \':\'○ \')+{both:\'BOTH DIRS\',east:\'EASTBOUND\',west:\'WESTBOUND\'}[bd];});" '+
+            'class="natdir-btn" data-dir="'+d+'" '+
             'style="font-size:9px;padding:5px 8px;border-radius:3px;cursor:pointer;font-weight:bold;letter-spacing:.05em;'+
             'background:'+(on?'#0a2040':'#060d18')+';border:1px solid '+(on?'#4fc3f7':'#1e3a5f')+';'+
             'color:'+(on?'#4fc3f7':'#2a4a6a')+'">'+(on?'● ':'○ ')+labels[d]+'</button>';
@@ -7320,10 +7321,6 @@ function parseNTMText(raw){
       i++;
     }
   }
-  // Filter tracks by direction if toggle set
-  if((S.mapToggles||{}).natDir&&S.mapToggles.natDir!=='both'){
-    tracks=tracks.filter(function(t){return t.direction===S.mapToggles.natDir;});
-  }
   // Sort tracks: east tracks Z→A, west tracks A→Z
   tracks.sort(function(a,b){
     if(a.direction===b.direction)return a.letter<b.letter?-1:1;
@@ -7855,6 +7852,11 @@ function _parseFPDTracks(data){
 function drawNATTracks(ctx,proj,W,H2){
   if(!S.natTracks.showOnMap||!S.natTracks.tracks.length)return;
   var tracks=S.natTracks.tracks;
+  // Filter by direction toggle
+  var natDir=(S.mapToggles||{}).natDir||'both';
+  if(natDir!=='both'){
+    tracks=tracks.filter(function(t){return t.direction===natDir;});
+  }
   tracks.forEach(function(track){
     var wpts=track.waypoints.filter(function(w){return w.lat!=null&&w.lon!=null&&!isNaN(w.lat)&&!isNaN(w.lon);});
     if(wpts.length<2)return;
