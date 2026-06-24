@@ -5710,51 +5710,52 @@ function _qCallup(){
     return`[REYKJAVIK — No RCL required per NAT Doc 007 V.2026-1]\n\n${st}, ${cs}, FLIGHT LEVEL ${lvl.replace('FL','')}, ${mach}, SELCAL CHECK ${selcal}${nextFir?', '+nextFir:''}.\n\n[WAIT FOR SELCAL TONE]\n\n${cs}, SELCAL CHECK OK.`;
   }
 
-  let s='';
-  // RCL timing note
-  if(isGander)s+='[GANDER OCR — Send RCL 90-60 min before OEP. No clearance issued. Fly domestic clearance.]\n';
-  else if(isShanwick)s+='[SHANWICK — Send RCL 90-30 min before OEP. Wait for oceanic clearance.]\n';
-  s+='\n';
-
-  // Initial HF call
-  s+=`${st}, ${cs}, `;
-  if(nextFir)s+=nextFir+', ';
-  s+=`SELCAL CHECK ${selcal}.`;
-  s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
-  s+=`${cs}, SELCAL CHECK OK.`;
-  s+='\n\n';
-
-  // RCL content
-  s+='-- RCL --\n';
-  // CPDLC format
   const cpdlcMach=mach.replace(/^M\./i,'M0').replace('M00','M0');
   const cpdlcFL=lvl.replace(/FL\s*/,'F');
   const cpdlcMaxFL=ableLvl.replace(/FL\s*/,'FL');
-  s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}-RMK/2ND NAT${isTrack?' '+fp.trackLetter.toUpperCase():''} ${cpdlcFL} MAX ${cpdlcMaxFL}\n`;
+  let s='';
+
+  // ── STEP 1: ACARS RCL ────────────────────────────────────────────────────
+  if(isGander)s+='-- STEP 1: SEND VIA ACARS (90-60 min before OEP) --\n[GANDER OCR — No clearance issued. Fly domestic clearance.]\n';
+  else if(isShanwick)s+='-- STEP 1: SEND VIA ACARS (90-30 min before OEP) --\n[SHANWICK — Clearance will be issued back via ACARS or HF.]\n';
   s+='\n';
-  s+='VOICE (if ACARS unavail):\n';
+  s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}-RMK/2ND NAT${isTrack?' '+fp.trackLetter.toUpperCase():''} ${cpdlcFL} MAX ${cpdlcMaxFL}`;
+  if(isGander)s+='\n\n[EXPECT: RCL RECEIVED — NOT A CLEARANCE]';
+  else if(isShanwick)s+='\n\n[EXPECT CLEARANCE WITHIN 15 MIN — IF NONE BY 30 MIN BEFORE OEP, USE VOICE]';
+
+  // Voice fallback
+  s+='\n\nVOICE (if ACARS unavail):\n';
   s+=`${st}, ${cs},\n`;
   s+=`ESTIMATING ${oef} AT ${oefETO},\n`;
   s+=`REQUEST ${mach}, ${lvl},\n`;
   s+=`ABLE ${ableLvl}.\n`;
-  // TMI always included
   s+=`TMI ${tmi}.`;
 
+  // ── STEP 2: HF INITIAL CONTACT + SELCAL ─────────────────────────────────
+  s+='\n\n-- STEP 2: HF INITIAL CONTACT (closer to OEP) --\n';
+  s+=`${st}, ${cs}`;
+  if(nextFir)s+=', '+nextFir;
+  s+=`, SELCAL CHECK ${selcal}.`;
+  s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
+  s+=`${cs}, SELCAL CHECK OK.`;
+
   if(isGander){
-    s+='\n\n[EXPECT: RCL RECEIVED BY GANDER — NOT A CLEARANCE]\n';
-    s+='[FLY EXISTING DOMESTIC CLEARANCE INTO OCEANIC]\n';
+    s+='\n\n[FLY DOMESTIC CLEARANCE INTO OCEANIC]\n';
     s+='[SQUAWK 2000 — 10 MIN AFTER OEP]';
   } else if(isShanwick){
-    s+='\n\n[WAIT FOR OCEANIC CLEARANCE VIA ACARS OR HF]\n';
-    // Clearance readback
+    // ── STEP 3: CLEARANCE READBACK ──────────────────────────────────────
+    s+='\n\n-- STEP 3: CLEARANCE READBACK --\n';
     if(isTrack){
-      s+=`\nREADBACK: ${cs} CLEARED TO ${dest}\n`;
+      s+=`${cs} CLEARED TO ${dest}\n`;
       s+=`VIA NAT TRACK ${fp.trackLetter.toUpperCase()} TMI ${tmi},\n`;
       s+=`FROM ${oef} MAINTAIN ${lvl},\n`;
       s+=`${mach}, WILCO.`;
     } else {
-      s+=`\nREADBACK: ${cs} CLEARED TO ${dest}\n`;
-      s+=`VIA FLIGHT PLANNED ROUTE,\n`;
+      const oepI=fp.oepIdx>=0?fp.oepIdx:(fp.coastOutIdx>=0?fp.coastOutIdx:0);
+      const oxfI=fp.oxfIdx>=0?fp.oxfIdx:fp.waypoints.length-1;
+      const rteWpts=fp.waypoints.filter((w,wi)=>wi>=oepI&&wi<=oxfI&&!w.bypassed&&w.name).map(w=>w.name).join(' ');
+      s+=`${cs} CLEARED TO ${dest}\n`;
+      s+=`VIA ${rteWpts||'[ROUTE]'},\n`;
       s+=`FROM ${oef} MAINTAIN ${lvl},\n`;
       s+=`${mach}, WILCO.`;
     }
