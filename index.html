@@ -995,7 +995,12 @@ function tTick(){
   // Skip re-render if user is typing in an input — preserves focus
   var _activeTag=document.activeElement&&document.activeElement.tagName;
   if(_activeTag==='INPUT'||_activeTag==='TEXTAREA')return;
-  if(S.tab==='timer')renderCon();else renderTabs();
+  // Update timer display in-place
+  const tDisplay=document.getElementById('timer-display');
+  if(tDisplay)tDisplay.textContent=fmtS(S.timer.secs);
+  const tsBtn=document.getElementById('btn-ts');
+  if(tsBtn&&!S.timer.running){tsBtn.textContent='▶ START';tsBtn.className='bs';}
+  if(S.tab==='timer')renderTabs();
 }
 function tStart(){
   if(S.timer.running)return;
@@ -1029,11 +1034,9 @@ function tPreset(s){
 // ── Stopwatch ────────────────────────────────────────────────────────────────
 function swTick(){
   S.sw.secs=Math.floor((Date.now()-S.sw.baseMs)/1000);
-  if(S.tab==='timer')renderCon();else{
-    // just update display if visible
-    const el=document.getElementById('btn-sw-ss');
-    if(el){const d=document.querySelector('.tr');} // handled by renderCon on timer tab
-  }
+  // Update display in-place — don't call renderCon which destroys DOM and loses event handlers
+  const swDisplay=document.getElementById('sw-display');
+  if(swDisplay)swDisplay.textContent=fmtS(S.sw.secs);
 }
 function swStart(){
   if(S.sw.running)return;
@@ -2451,11 +2454,9 @@ function enterFlightMode(){
     const c=document.getElementById('map-canvas');if(!c)return;
     const newScale=mapState.scale*1.25;
     if(_selFixLat!==null&&_selFixLon!==null){
-      // Pin exactly to selected fix using lat/lon — no pixel drift
       centerOnLatLon(_selFixLat,_selFixLon,newScale,c);
-    } else if(S.gps&&S.gps.lat!==undefined){
-      centerOnLatLon(S.gps.lat,S.gps.lon,newScale,c);
     } else {
+      // Zoom in place — don't jump to GPS
       zoomAt(c.offsetWidth/2,c.offsetHeight/2,1.25);mapRaf(c);
     }
   };
@@ -2464,9 +2465,8 @@ function enterFlightMode(){
     const newScale=mapState.scale*0.8;
     if(_selFixLat!==null&&_selFixLon!==null){
       centerOnLatLon(_selFixLat,_selFixLon,newScale,c);
-    } else if(S.gps&&S.gps.lat!==undefined){
-      centerOnLatLon(S.gps.lat,S.gps.lon,newScale,c);
     } else {
+      // Zoom in place — don't jump to GPS
       zoomAt(c.offsetWidth/2,c.offsetHeight/2,0.8);mapRaf(c);
     }
   };
@@ -3731,9 +3731,8 @@ function vPlan(){
         ${fp.coastInIdx===i?'<span style="font-size:9px;color:#00d46a;font-weight:bold;margin-left:3px">★IN</span>':''}
         ${fp.oepIdx===i?'<span style="font-size:9px;color:#ff8c00;font-weight:bold;margin-left:3px">OEP</span>':''}
         ${fp.oxfIdx===i?'<span style="font-size:9px;color:#9b4dff;font-weight:bold;margin-left:3px">OXF</span>':''}
-        ${hc?`<span style="font-size:9px;color:#2a5a7a">${w.lat.toFixed(2)}°/${w.lon.toFixed(2)}°</span>`:''}
         ${windBadge}
-        ${w.eto?`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 5px"> ⏱${w.eto}Z</span>`:`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 5px">+ETO</span>`}
+        ${w.eto?`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 4px">⏱${w.eto}Z</span>`:`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 4px">+ETO</span>`}
         ${w.actualTime?`<span style="font-size:9px;color:#90ee90"> ✓${w.actualTime}Z</span>`:''}
         <span onclick="togWE(${i})" style="cursor:pointer;font-size:13px;color:${hc?'#40a040':'#4a7a9a'}">📍</span>
         <span onclick="dctFromHere(${i})" style="color:#4a7aaa;cursor:pointer;font-size:11px;margin-left:4px;background:#0a1520;border:1px solid #1a3a5a;border-radius:2px;padding:1px 5px" title="Reroute: DCT to this fix">DCT</span>
@@ -8764,14 +8763,15 @@ function drawLandmasses(ctx,proj,W,H2){
     function drawETPTick(lat,lon,color,label,side){
       if(!lat||!lon)return;
       const p=proj(lat,lon);
-      const tickLen=18;
+      const tickLen=Math.max(12,Math.min(30,Math.round(18*mapState.scale*0.5)));
       // Draw perpendicular line (vertical on mercator approximation)
       ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.setLineDash([]);
       ctx.beginPath();ctx.moveTo(p.x,p.y-tickLen);ctx.lineTo(p.x,p.y+tickLen);ctx.stroke();
       // Small dot at center
       ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
       // Label
-      ctx.fillStyle=color;ctx.font='bold 9px monospace';
+      const etpFontSz=Math.max(9,Math.min(16,Math.round(9*mapState.scale*0.8)));
+      ctx.fillStyle=color;ctx.font='bold '+etpFontSz+'px monospace';
       ctx.textAlign=side==='right'?'left':'right';
       const xOff=side==='right'?5:-5;
       ctx.fillText(label,p.x+xOff,p.y-tickLen+4);
@@ -9196,7 +9196,7 @@ function vTimer(){
     <div class="sec">
       ${H('Interval Timer')}
       <div class="${rc}">
-        <div style="font-size:30px;font-weight:bold;color:${tc}">${fmtS(t.secs)}</div>
+        <div id="timer-display" style="font-size:30px;font-weight:bold;color:${tc}">${fmtS(t.secs)}</div>
         <div style="font-size:9px;color:#4a6a8a;letter-spacing:.2em">${exp?'EXPIRED':t.running?'RUNNING':'PAUSED'}</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:center;margin-bottom:14px">
@@ -9219,7 +9219,7 @@ function vTimer(){
     <div class="sec">
       ${H('Stopwatch')}
       <div class="tr">
-        <div style="font-size:30px;font-weight:bold;color:#50c878">${fmtS(S.sw.secs)}</div>
+        <div id="sw-display" style="font-size:30px;font-weight:bold;color:#50c878">${fmtS(S.sw.secs)}</div>
         <div style="font-size:9px;color:#4a6a8a;letter-spacing:.2em">${S.sw.running?'RUNNING':'STOPPED'}</div>
       </div>
       <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px">
