@@ -1016,22 +1016,36 @@ function tStartStop(){
   clearInterval(S.timer.iid);S.timer.iid=null;
   if(S.timer.running){tDeadline();S.timer.iid=setInterval(tTick,1000);}
   else S.timer.alarmAt=null;
-  tSave();renderCon();
+  tSave();_updateTimerUI();
 }
 function tReset(){
   clearInterval(S.timer.iid);clearInterval(S.timer.repeatIid);
   S.timer.iid=null;S.timer.repeatIid=null;S.timer.running=false;
   S.timer.secs=S.timer.preset;S.timer.warnFired=false;S.timer.alarmAt=null;
-  tSave();renderCon();
+  tSave();_updateTimerUI();
 }
 function tPreset(s){
   clearInterval(S.timer.iid);clearInterval(S.timer.repeatIid);
   S.timer.iid=null;S.timer.repeatIid=null;S.timer.running=false;
   S.timer.preset=s;S.timer.secs=s;S.timer.warnFired=false;S.timer.alarmAt=null;
-  tSave();renderCon();
+  tSave();_updateTimerUI();
 }
 
 // ── Stopwatch ────────────────────────────────────────────────────────────────
+function _updateTimerUI(){
+  const td=document.getElementById('timer-display');
+  if(td)td.textContent=fmtS(S.timer.secs);
+  const tb=document.getElementById('btn-ts');
+  if(tb){
+    const exp=S.timer.secs===0&&!S.timer.running;
+    tb.textContent=exp?'↺ RESTART':S.timer.running?'⏸ PAUSE':'▶ START';
+    tb.className=S.timer.running?'bd':'bs';
+  }
+  const sd=document.getElementById('sw-display');
+  if(sd)sd.textContent=fmtS(S.sw.secs);
+  const sb=document.getElementById('btn-sw-ss');
+  if(sb){sb.textContent=S.sw.running?'⏸ STOP':'▶ START';sb.className=S.sw.running?'bd':'bs';}
+}
 function swTick(){
   S.sw.secs=Math.floor((Date.now()-S.sw.baseMs)/1000);
   // Update display in-place — don't call renderCon which destroys DOM and loses event handlers
@@ -1044,17 +1058,17 @@ function swStart(){
   S.sw.running=true;
   clearInterval(S.sw.iid);
   S.sw.iid=setInterval(swTick,1000);
-  renderCon();
+  _updateTimerUI();
 }
 function swStop(){
   S.sw.running=false;
   clearInterval(S.sw.iid);S.sw.iid=null;
-  renderCon();
+  _updateTimerUI();
 }
 function swReset(){
   clearInterval(S.sw.iid);S.sw.iid=null;
   S.sw.running=false;S.sw.secs=0;S.sw.baseMs=0;
-  renderCon();
+  _updateTimerUI();
 }
 
 
@@ -4672,10 +4686,7 @@ function vProg(){
         })():'' }
         ${S.fp.coastInIdx===i?'<span style="font-size:9px;background:#003a1a;border:1px solid #00d46a;color:#00d46a;border-radius:2px;padding:1px 5px;margin-left:2px">COAST IN</span>':''}
         ${w.bypassed?'<span style="font-size:9px;color:#4a4a8a;margin-left:4px;border:1px solid #2a2a5a;border-radius:2px;padding:0 4px">DCT</span>':done?`<span style="font-size:9px;color:#90ee90;margin-left:4px">✓${esc(w.actualTime)}Z</span>`:''}
-        ${w.eto
-          ?`<span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 5px;margin-left:2px">⏱${w.eto}Z</span>`
-          :`<span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 5px;margin-left:2px">+ETO</span>`
-        }
+        <span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;cursor:pointer;padding:1px 4px;margin-left:2px;border-radius:2px;${w.eto?'color:#ffd700;background:#1a1500;border:1px solid #3a3000':'color:#2a3a2a;background:#0a0f0a;border:1px solid #1a2a1a'}">${w.eto?'⏱'+w.eto+'Z':'+ETO'}</span>
         ${photo}
         <span style="color:#2a4a6a;margin-left:4px">${exp?'▲':'▼'}</span>
       </div>
@@ -5721,7 +5732,11 @@ function _qCallup(){
   if(isGander)s+='-- STEP 1: SEND VIA ACARS (90-60 min before OEP) --\n[GANDER OCR — No clearance issued. Fly domestic clearance.]\n';
   else if(isShanwick)s+='-- STEP 1: SEND VIA ACARS (90-30 min before OEP) --\n[SHANWICK — Clearance will be issued back via ACARS or HF.]\n';
   s+='\n';
-  s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}-RMK/2ND NAT${isTrack?' '+fp.trackLetter.toUpperCase():''} ${cpdlcFL} MAX ${cpdlcMaxFL}`;
+  // RMK/2ND NAT only if user has backup track preference
+  // Track route: include track letter in main field, no RMK prefix needed
+  // Random route: just F[level] MAX FL[able], no RMK
+  const acarsRmk=isTrack?`-${cpdlcFL} MAX ${cpdlcMaxFL}`:`-${cpdlcFL} MAX ${cpdlcMaxFL}`;
+  s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}${acarsRmk}`;
   if(isGander)s+='\n\n[EXPECT: RCL RECEIVED — NOT A CLEARANCE]';
   else if(isShanwick)s+='\n\n[EXPECT CLEARANCE WITHIN 15 MIN — IF NONE BY 30 MIN BEFORE OEP, USE VOICE]';
 
