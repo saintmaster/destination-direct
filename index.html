@@ -2492,6 +2492,8 @@ function enterFlightMode(){
     } else {mapState.offX=0;mapState.offY=0;saveMapState();const c2=document.getElementById('map-canvas');if(c2)drawMap(c2);}
   };
   document.getElementById('flight-btn-ac').onclick=()=>{
+    // Clear selected fix so zoom follows aircraft not waypoint
+    _selFixLat=null;_selFixLon=null;
     const AC_SCALE=mapState.scale;
     if(S.gps&&S.gps.lat!==null&&S.gps.lat!==undefined){
       centerOnLatLon(S.gps.lat,S.gps.lon,AC_SCALE);
