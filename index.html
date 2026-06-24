@@ -5086,17 +5086,17 @@ function vPosrep(){
   const nextFirName=isGander&&isEastbound?'SHANWICK NEXT':isShanwick&&!isEastbound?'GANDER NEXT':'';
     const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
     const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
-    let s=`${st}, ${cs}, SELCAL CHECK`;
+    let s=`${st}, ${cs}, ON ${pf1}.`;
+    s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
+    s+=`${st}, ${cs}`;
     if(nextFirName)s+=', '+nextFirName;
-    s+='.';
-    s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
-    if(isGander){
-      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
-    } else if(isShanwick){
-      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    } else {
-      s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    }
+    s+=', SELCAL CHECK.';
+    s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
+    s+=`${cs}, SELCAL CHECK OK`;
+    if(nextFirName)s+=', '+nextFirName;
+    if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
+    else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+    else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     return s;
   }
   function qAbleHigher(){
@@ -5317,17 +5317,17 @@ function bPosrep(){
     const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
     const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
     const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
-    let s=`${st}, ${cs}, SELCAL CHECK`;
+    let s=`${st}, ${cs}, ON ${pf1}.`;
+    s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
+    s+=`${st}, ${cs}`;
     if(nextFirName)s+=', '+nextFirName;
-    s+='.';
-    s+='\n\n[WAIT FOR ATC SELCAL + ACKNOWLEDGE]\n\n';
-    if(isGander){
-      s+=`READBACK: GANDER RADIO, ${cs}, SELCAL CHECK OK. AT 30W, CONTACT SHANWICK RADIO HF PRIMARY ${pf2}, SECONDARY [FREQ].`;
-    } else if(isShanwick){
-      s+=`READBACK: SHANWICK RADIO, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    } else {
-      s+=`READBACK: ${st}, ${cs}, SELCAL CHECK OK, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    }
+    s+=', SELCAL CHECK.';
+    s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
+    s+=`${cs}, SELCAL CHECK OK`;
+    if(nextFirName)s+=', '+nextFirName;
+    if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
+    else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+    else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     return s;
   }
   function _qWAH(){
@@ -5745,7 +5745,7 @@ function _qCallup(){
   const acarsRmk=isTrack?`-${cpdlcFL} MAX ${cpdlcMaxFL}`:`-${cpdlcFL} MAX ${cpdlcMaxFL}`;
   s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}${acarsRmk}`;
   if(isGander)s+='\n\n[EXPECT: RCL RECEIVED — NOT A CLEARANCE]';
-  else if(isShanwick)s+='\n\n[EXPECT CLEARANCE WITHIN 15 MIN — IF NONE BY 30 MIN BEFORE OEP, USE VOICE]';
+  else if(isShanwick)s+='\n\n[IF NO RESPONSE IN 15 MIN — OR NO CLEARANCE BY 30 MIN BEFORE OEP — USE VOICE BELOW]';
 
   // Voice fallback
   s+='\n\nVOICE (if ACARS unavail):\n';
