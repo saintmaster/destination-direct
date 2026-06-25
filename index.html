@@ -571,7 +571,7 @@ const DEF=()=>({
   timer:{secs:600,preset:600,running:false,iid:null,alarmEnabled:true,
          warnFired:false,repeatIid:null,alarmAt:null},
   sw:{secs:0,running:false,iid:null,baseMs:0},
-  phrase:'',etaCalc:null,selFreq:null,selStation:null,
+  phrase:'',etaCalc:null,selFreq:null,selStation:null,hfPrimary:'',hfSecondary:'',
   callupScript:null,expandedProg:null,posMarks:[],autoMarkOnTimer:false,
   gps:{lat:null,lon:null,acc:null,speed:null,ts:null,watchId:null},
   gpsTrail:[],
@@ -2639,6 +2639,7 @@ function endFlight(){
   confirm2async('END FLIGHT?\n\nThis will stop the flight timer and close the flight record.\nYou can still view the log but the flight will be marked complete.',function(){
     S.fp.landingTime=utcNow();
     S.reports.unshift({id:Date.now(),savedAt:new Date().toISOString(),type:'event',eventType:'landing',time:S.fp.landingTime,callsign:S.fp.callsign||'',dep:S.fp.dep||'',dest:S.fp.dest||''});
+    if(!S.fp.landingMapSnapshot)S.fp.landingMapSnapshot=drawFlightSnapshot();
     saveAll();
     exitFlightMode();
   });
@@ -4271,7 +4272,7 @@ function buildCallup(posStr){
   var slopNote=fp.slop>0?'  SLOP: '+fp.slop+' NM RIGHT OF TRACK':'';
   var nextFir='';
   if(st.toLowerCase().includes('gander'))nextFir='SHANWICK NEXT';
-  else if(st.toLowerCase().includes('shanwick'))nextFir='GANDER NEXT';
+  else if(st.toLowerCase().includes('shanwick'))nextFir='';
   else if(st.toLowerCase().includes('new york')||st.toLowerCase().includes('kzwy'))nextFir='GANDER NEXT';
   else if(st.toLowerCase().includes('santa maria'))nextFir='SHANWICK NEXT';
   var posDisplay=posStr||'[CURRENT POSITION]';
@@ -4525,7 +4526,7 @@ function bCallup(){
   document.getElementById('cu-sel')?.addEventListener('change',e=>{
     const idx=parseInt(e.target.value);
     S.selStation=(!isNaN(idx)&&HF[idx])?HF[idx]:null;
-    S.callupScript=null;saveAll();renderCon();
+    S.callupScript=null;S.hfPrimary='';S.hfSecondary='';saveAll();renderCon();
   });
   // Save OEF and entry time as user types
   document.getElementById('cu-oef')?.addEventListener('input',function(e){
@@ -5060,7 +5061,7 @@ function vPosrep(){
   const cs=(fp.callsign||'[CALLSIGN]').toUpperCase();
   const st=S.selStation?S.selStation.call:'[STATION]';
   const stName=S.selStation?S.selStation.s:'No station selected';
-  const primaryFreq=S.selStation?S.selStation.f[0]+' kHz':'—';
+  const primaryFreq=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'—';
 
   // FMS coord display
   const la=parseCS(r.lat),lo=parseCS(r.lon);
@@ -5090,8 +5091,8 @@ function vPosrep(){
   // Westbound: calling Shanwick → Gander is next; calling Gander → no next oceanic sector
   const isEastbound=(S.fp.dest||'').match(/^EG|^EI|^EB|^ED|^LF|^LP|^LS/i)||false;
   const nextFirName=isGander&&isEastbound?'SHANWICK NEXT':isShanwick&&!isEastbound?'GANDER NEXT':'';
-    const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
-    const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
+    const pf1=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+    const pf2=S.hfSecondary?S.hfSecondary+' kHz':S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ]';
     let s=`${st}, ${cs}, ON ${pf1}.`;
     s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
     s+=`${st}, ${cs}`;
@@ -5100,9 +5101,7 @@ function vPosrep(){
     s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
     s+=`${cs}, SELCAL CHECK OK`;
     if(nextFirName)s+=', '+nextFirName;
-    if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
-    else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+    s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     return s;
   }
   function qAbleHigher(){
@@ -5118,11 +5117,28 @@ function vPosrep(){
 
   // Station bar
   const stB=S.selStation?
-    `<div style="background:#060d18;border:1px solid #1a4a7a;border-radius:3px;padding:7px 10px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
-      <div><div style="font-size:9px;color:#4a7a9a">ACTIVE STATION</div>
-        <div style="color:#4fc3f7;font-weight:bold;font-size:13px">${esc(stName)}</div>
-        <div style="color:#4a6a8a;font-size:10px">${primaryFreq}</div></div>
-      <button class="bg" onclick="S.flightMode?togglePanel('comms'):setTab('callup')" style="font-size:10px;padding:4px 10px">CHANGE</button>
+    `<div style="background:#060d18;border:1px solid #1a4a7a;border-radius:3px;padding:7px 10px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div><div style="font-size:9px;color:#4a7a9a">ACTIVE STATION</div>
+          <div style="color:#4fc3f7;font-weight:bold;font-size:13px">${esc(stName)}</div></div>
+        <button class="bg" onclick="S.flightMode?togglePanel('comms'):setTab('callup')" style="font-size:10px;padding:4px 10px">CHANGE</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div>
+          <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px">PRIMARY kHz</div>
+          <input id="hf-primary-inp" type="text" inputmode="numeric" value="${S.hfPrimary||''}" placeholder="e.g. 5616"
+            style="width:100%;box-sizing:border-box;background:#0a1828;border:1px solid #1e5a9a;border-radius:3px;color:#4fc3f7;font-size:15px;padding:7px 8px;font-family:monospace"
+            autocomplete="off" autocorrect="off" spellcheck="false"
+            onfocus="showHFPicker('primary')" oninput="S.hfPrimary=this.value.trim();saveAll()">
+        </div>
+        <div>
+          <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px">SECONDARY kHz</div>
+          <input id="hf-secondary-inp" type="text" inputmode="numeric" value="${S.hfSecondary||''}" placeholder="e.g. 8864"
+            style="width:100%;box-sizing:border-box;background:#0a1828;border:1px solid #1e5a9a;border-radius:3px;color:#4fc3f7;font-size:15px;padding:7px 8px;font-family:monospace"
+            autocomplete="off" autocorrect="off" spellcheck="false"
+            onfocus="showHFPicker('secondary')" oninput="S.hfSecondary=this.value.trim();saveAll()">
+        </div>
+      </div>
     </div>`:
     `<div style="background:#1a0a0a;border:1px solid #5a1a1a;border-radius:3px;padding:7px 10px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">
       <span style="color:#ff6060;font-size:11px">⚠ No station selected</span>
@@ -5320,9 +5336,9 @@ function bPosrep(){
     const st=S.selStation?S.selStation.call:'[STATION]';
     const isGander=stId==='CZQX';
     const isShanwick=stId==='EGGX';
-    const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
-    const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
-    const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
+    const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'':'';
+    const pf1=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+    const pf2=S.hfSecondary?S.hfSecondary+' kHz':S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ]';
     let s=`${st}, ${cs}, ON ${pf1}.`;
     s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
     s+=`${st}, ${cs}`;
@@ -5331,9 +5347,7 @@ function bPosrep(){
     s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
     s+=`${cs}, SELCAL CHECK OK`;
     if(nextFirName)s+=', '+nextFirName;
-    if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
-    else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-    else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+    s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
     return s;
   }
   function _qWAH(){
@@ -5423,7 +5437,7 @@ function bPosrep(){
 }
 function autoSetStation(firId){
   const idx=HF.findIndex(h=>h.id===firId);
-  if(idx>=0){S.selStation=HF[idx];S.callupScript=null;saveAll();renderCon();}
+  if(idx>=0){S.selStation=HF[idx];S.callupScript=null;S.hfPrimary='';S.hfSecondary='';saveAll();renderCon();}
 }
 // Auto-set station from GPS position — no confirmation needed
 function _autoStationFromGPS(lat,lon){
@@ -5511,7 +5525,7 @@ function vComms(){
   const stId=S.selStation?S.selStation.id:'';
   const st=S.selStation?S.selStation.call:'[STATION]';
   const stName=S.selStation?S.selStation.s:'No station selected';
-  const primaryFreq=S.selStation?S.selStation.f[0]+' kHz':'—';
+  const primaryFreq=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'—';
   const iAttr='autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"';
   const iAttrUC='autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"';
   const iStyle='font-size:16px;padding:10px;';
@@ -5520,13 +5534,28 @@ function vComms(){
   const opts=HF.map((f,i)=>`<option value="${i}"${S.selStation===HF[i]?' selected':''}>${f.s} — ${f.r}</option>`).join('');
   const stBar=S.selStation?
     `<div style="background:#060d18;border:1px solid #1a4a7a;border-radius:6px;padding:8px 12px;margin-bottom:10px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
         <div>
           <div style="font-size:9px;color:#4a7a9a;letter-spacing:.1em">ACTIVE STATION</div>
           <div style="color:#4fc3f7;font-weight:bold;font-size:14px">${esc(stName)}</div>
-          <div style="color:#4a6a8a;font-size:11px">${primaryFreq}${S.selStation&&S.selStation.f[1]?' · '+S.selStation.f[1]+' kHz':''}</div>
         </div>
         <button onclick="document.getElementById('st-picker').style.display=document.getElementById('st-picker').style.display==='none'?'block':'none'" style="padding:6px 10px;font-size:10px;background:#0a1a2a;border:1px solid #1e3a5f;border-radius:4px;color:#4fc3f7;cursor:pointer">CHANGE ▾</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <div>
+          <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px">PRIMARY kHz</div>
+          <input id="hf-primary-inp" type="text" inputmode="numeric" value="${S.hfPrimary||''}" placeholder="e.g. 5616"
+            style="width:100%;box-sizing:border-box;background:#0a1828;border:1px solid #1e5a9a;border-radius:3px;color:#4fc3f7;font-size:15px;padding:7px 8px;font-family:monospace"
+            autocomplete="off" autocorrect="off" spellcheck="false"
+            onfocus="showHFPicker('primary')" oninput="S.hfPrimary=this.value.trim();saveAll()">
+        </div>
+        <div>
+          <div style="font-size:9px;color:#4a7a9a;margin-bottom:3px">SECONDARY kHz</div>
+          <input id="hf-secondary-inp" type="text" inputmode="numeric" value="${S.hfSecondary||''}" placeholder="e.g. 8864"
+            style="width:100%;box-sizing:border-box;background:#0a1828;border:1px solid #1e5a9a;border-radius:3px;color:#4fc3f7;font-size:15px;padding:7px 8px;font-family:monospace"
+            autocomplete="off" autocorrect="off" spellcheck="false"
+            onfocus="showHFPicker('secondary')" oninput="S.hfSecondary=this.value.trim();saveAll()">
+        </div>
       </div>
       <div id="st-picker" style="display:none;margin-top:6px">
         <select id="cu-sel" style="width:100%;font-size:14px;padding:8px;background:#0a1520;border:1px solid #1e3a5f;border-radius:4px;color:#7dcfff">
@@ -5717,7 +5746,7 @@ function _qCallup(){
   const isGander=stId==='CZQX';
   const isShanwick=stId==='EGGX';
   const isReykjavik=stId==='BIRD';
-  const primaryFreq=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+  const primaryFreq=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
   // Get OEP from waypoints
   const _oepIdx=fp.oepIdx>=0?fp.oepIdx:(fp.coastOutIdx>=0?fp.coastOutIdx:-1);
   const oepWpt=_oepIdx>=0?fp.waypoints[_oepIdx]:null;
@@ -5730,7 +5759,7 @@ function _qCallup(){
   const selcal=fp.selcal||'[SELCAL]';
   const isTrack=fp.trackType!=='random'&&fp.trackLetter;
   const dest=(fp.dest||'[DEST]').toUpperCase();
-  const nextFir=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
+  const nextFir=isGander?'SHANWICK NEXT':isShanwick?'':'';
 
   if(isReykjavik){
     return`[REYKJAVIK — No RCL required per NAT Doc 007 V.2026-1]\n\n${st}, ${cs}, FLIGHT LEVEL ${lvl.replace('FL','')}, ${mach}, SELCAL CHECK ${selcal}${nextFir?', '+nextFir:''}.\n\n[WAIT FOR SELCAL TONE]\n\n${cs}, SELCAL CHECK OK.`;
@@ -5888,14 +5917,55 @@ function _qPos(){
   const slop=fp.slop>0?'\nSLOP '+fp.slop+' NM RIGHT':'';
   return`${st}, ${cs}, POSITION ON ${pf}\n\n[WAIT FOR ATC — "GO AHEAD"]\n\n${cs}\nPOSITION ${pos}\nTIME ${t}\nFLIGHT LEVEL ${fl}\nESTIMATING ${nw} AT ${ne}\nNEXT ${wa}\nSPEED ${(fp.mach||'[MACH]').toUpperCase()}${oat}${wind}${turb}${icing}${slop}${rmk}\nOVER\n\n[IF FIRST HF CONTACT — ALSO SAY: SELCAL ${(fp.selcal||"[SELCAL]").toUpperCase()}]\n\n[IF RANDOM ROUTE — MIDPOINT WEATHER REQUIRED AT NEXT REPORT:\nMID TEMP: [OAT AT MIDPOINT]\nMID WIND: [WIND AT MIDPOINT]\nMID WIND POSITION: [MIDPOINT COORDS]]\n\n[ATC READBACK — THEN:]\n${st}, ${cs}, CORRECT.`;
 }
+function showHFPicker(field){
+  document.getElementById('_hf_picker')?.remove();
+  const st=S.selStation;
+  if(!st||!st.families)return;
+  const overlay=document.createElement('div');
+  overlay.id='_hf_picker';
+  overlay.style.cssText='position:fixed;inset:0;z-index:600;background:rgba(0,0,0,0.7);display:flex;align-items:flex-end';
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  const panel=document.createElement('div');
+  panel.style.cssText='background:#0d1a2a;border-top:1px solid #1e3a5f;border-radius:8px 8px 0 0;padding:12px;width:100%;max-height:70vh;overflow-y:auto;box-sizing:border-box';
+  const title=document.createElement('div');
+  title.style.cssText='font-size:10px;color:#4a7a9a;letter-spacing:.12em;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center';
+  title.innerHTML=`<span>SELECT ${field.toUpperCase()} FREQ — TAP TO SET</span><button onclick="document.getElementById('_hf_picker')?.remove()" style="background:none;border:none;color:#4a7a9a;font-size:16px;cursor:pointer;padding:0 4px">✕</button>`;
+  panel.appendChild(title);
+  Object.entries(st.families).forEach(([fam,freqs])=>{
+    const row=document.createElement('div');
+    row.style.cssText='margin-bottom:10px';
+    const label=document.createElement('div');
+    label.style.cssText='font-size:10px;color:#7dcfff;font-weight:bold;margin-bottom:5px';
+    label.textContent='Family '+fam;
+    row.appendChild(label);
+    const btnRow=document.createElement('div');
+    btnRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px';
+    freqs.forEach(freq=>{
+      const b=document.createElement('button');
+      const isActive=(field==='primary'&&S.hfPrimary===freq)||(field==='secondary'&&S.hfSecondary===freq);
+      b.style.cssText=`background:${isActive?'#0a3060':'#0a2040'};border:1px solid ${isActive?'#4fc3f7':'#1e5a9a'};border-radius:4px;color:#4fc3f7;font-size:14px;font-family:monospace;padding:8px 12px;cursor:pointer;min-width:70px`;
+      b.textContent=freq;
+      b.addEventListener('click',()=>{
+        if(field==='primary'){S.hfPrimary=freq;const inp=document.getElementById('hf-primary-inp');if(inp)inp.value=freq;}
+        else{S.hfSecondary=freq;const inp=document.getElementById('hf-secondary-inp');if(inp)inp.value=freq;}
+        saveAll();overlay.remove();
+      });
+      btnRow.appendChild(b);
+    });
+    row.appendChild(btnRow);
+    panel.appendChild(row);
+  });
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
 function _qSelcal(){
   const cs=(S.fp.callsign||'[CALLSIGN]').toUpperCase();
   const stId=S.selStation?S.selStation.id:'';
   const st=S.selStation?S.selStation.call:'[STATION]';
   const isGander=stId==='CZQX';const isShanwick=stId==='EGGX';
-  const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'GANDER NEXT':'';
-  const pf1=S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
-  const pf2=S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ2]';
+  const nextFirName=isGander?'SHANWICK NEXT':isShanwick?'':'';
+  const pf1=S.hfPrimary?S.hfPrimary+' kHz':S.selStation?S.selStation.f[0]+' kHz':'[FREQ]';
+  const pf2=S.hfSecondary?S.hfSecondary+' kHz':S.selStation&&S.selStation.f[1]?S.selStation.f[1]+' kHz':'[FREQ]';
   // Initial call with frequency
   let s=`${st}, ${cs}, ON ${pf1}.`;
   s+='\n\n[WAIT FOR ATC RESPONSE]\n\n';
@@ -5905,9 +5975,7 @@ function _qSelcal(){
   s+='\n\n[WAIT FOR SELCAL TONE]\n\n';
   s+=`${cs}, SELCAL CHECK OK`;
   if(nextFirName)s+=', '+nextFirName;
-  if(isGander)s+=`, PRIMARY ${pf2}, SECONDARY [FREQ].`;
-  else if(isShanwick)s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
-  else s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
+  s+=`, PRIMARY ${pf1}, SECONDARY ${pf2}.`;
   return s;
 }
 function _qWAH(){
@@ -5940,7 +6008,7 @@ function bComms(){
   document.getElementById('cu-sel')?.addEventListener('change',e=>{
     const idx=parseInt(e.target.value);
     S.selStation=(!isNaN(idx)&&HF[idx])?HF[idx]:null;
-    S.callupScript=null;saveAll();
+    S.callupScript=null;S.hfPrimary='';S.hfSecondary='';saveAll();
     document.getElementById('st-picker').style.display='none';
     // Re-render comms panel to show new station
     const content=document.getElementById('flight-panel-content');
