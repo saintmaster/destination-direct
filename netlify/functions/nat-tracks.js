@@ -1,30 +1,22 @@
 // Destination Direct — NAT Tracks Netlify Function
 //
 // SOURCE: https://nms.aim.faa.gov/datanat/nat.json
-// Found via browser DevTools Network tab on the public NMS NAT page
-// (https://nms.aim.faa.gov/nat). This is a plain public JSON file served
-// by Express — NO OAuth/Bearer token required, no rate-limit dance.
-// Status 304/200, Cache-Control: private, max-age=30.
-//
-// We don't yet know the exact JSON shape, so this function:
-//   1. Fetches the JSON directly.
-//   2. Tries a few reasonable parse strategies (structured track objects,
-//      OR a raw text blob containing "NAT-#/# TRACKS" — same regex parser
-//      we built earlier for the AIXM NOTAM text).
-//   3. ALWAYS includes a truncated raw dump in debug so we can see the
-//      actual shape and refine the parser if the first guess is wrong.
 
 const https = require('https');
 
 const NAT_HOST = 'nms.aim.faa.gov';
 const NAT_PATH = '/datanat/nat.json';
 
-// ─── Simple HTTPS GET, no auth ────────────────────────────────────────────
 function httpGet(hostname, path) {
   return new Promise((resolve, reject) => {
     const req = https.request({
       hostname, path, method: 'GET',
-      headers: { 'Accept': 'application/json, text/plain, */*' }
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'Cache-Control': 'no-cache, no-store',
+        'Pragma': 'no-cache',
+        'User-Agent': 'DestinationDirect/1.0'
+      }
     }, (res) => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
@@ -39,7 +31,6 @@ function httpGet(hostname, path) {
   });
 }
 
-// ─── Regex parser for raw NAT-#/# TRACKS text blobs (proven earlier) ────────
 function parseNATTracksFromText(blob) {
   const tracks = [];
   let tmi = '';
@@ -107,8 +98,6 @@ function parseNATTracksFromText(blob) {
   return { tracks, tmi, natHeaders };
 }
 
-// ─── Attempt to parse a structured JSON track object into our format ───────
-// Tries common field name variants since we don't know the exact schema yet.
 function tryParseStructuredTrack(t) {
   const letter = t.identifier || t.id || t.track || t.letter || t.name || '?';
   let waypoints = [];
@@ -144,16 +133,20 @@ function tryParseStructuredTrack(t) {
   };
 }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
 exports.handler = async function(event, context) {
   const headers = {
     'Content-Type':                'application/json',
     'Access-Control-Allow-Origin': '*',
-    'Cache-Control':               'no-cache'
+    'Cache-Control':               'no-cache, no-store, must-revalidate',
+    'Pragma':                      'no-cache',
+    'Expires':                     '0'
   };
 
+  // Cache-bust the upstream URL
+  const cacheBust = '?t=' + Date.now();
+
   try {
-    const res = await httpGet(NAT_HOST, NAT_PATH);
+    const res = await httpGet(NAT_HOST, NAT_PATH + cacheBust);
 
     if (res.status !== 200 && res.status !== 304) {
       return { statusCode: 200, headers,
@@ -171,7 +164,6 @@ exports.handler = async function(event, context) {
     let strategy = 'none';
 
     if (json) {
-      // Strategy A: top-level array of structured track objects
       const arr = Array.isArray(json) ? json
         : Array.isArray(json.tracks) ? json.tracks
         : Array.isArray(json.data) ? json.data
@@ -186,7 +178,6 @@ exports.handler = async function(event, context) {
         }
       }
 
-      // Strategy B: a text/string field containing "NAT-#/# TRACKS" raw text
       if (tracks.length === 0) {
         const textCandidates = [];
         const collectStrings = (obj, depth) => {
@@ -210,7 +201,6 @@ exports.handler = async function(event, context) {
         }
       }
     } else {
-      // Not JSON at all — try regex directly on raw body
       const r = parseNATTracksFromText(res.body);
       tracks = r.tracks;
       tmi = r.tmi;
@@ -229,6 +219,7 @@ exports.handler = async function(event, context) {
           strategy: strategy,
           nat_headers: natHeaders,
           tracks_parsed: tracks.length,
+          fetched_at: new Date().toISOString(),
           json_top_level_type: json ? (Array.isArray(json) ? 'array' : typeof json) : 'not-json',
           json_top_level_keys: (json && !Array.isArray(json) && typeof json === 'object') ? Object.keys(json) : null,
           raw_snippet: res.body.substring(0, 3000)
