@@ -5567,7 +5567,7 @@ function vComms(){
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
         <span style="color:#ff6060;font-size:12px">⚠ No station — auto-selecting from GPS</span>
       </div>
-      <select id="cu-sel" style="width:100%;font-size:14px;padding:8px;background:#0a1520;border:1px solid #5a1a1a;border-radius:4px;color:#7dcfff">
+      <select id="cu-sel" onchange="var idx=parseInt(this.value);if(!isNaN(idx)&&HF[idx]){S.selStation=HF[idx];S.hfPrimary='';S.hfSecondary='';S.callupScript=null;saveAll();var c=document.getElementById('flight-panel-content');if(c){c.innerHTML=vComms();_bindInPanel(bComms);}}" style="width:100%;font-size:14px;padding:8px;background:#0a1520;border:1px solid #5a1a1a;border-radius:4px;color:#7dcfff">
         <option value="">— Select station —</option>${opts}
       </select>
     </div>`;
