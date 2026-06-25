@@ -2513,6 +2513,8 @@ function enterFlightMode(){
     _selFixLat=null;_selFixLon=null;
     const AC_SCALE=mapState.scale;
     if(S.gps&&S.gps.lat!==null&&S.gps.lat!==undefined){
+      // Update map center anchor so subsequent zoom stays on aircraft
+      mapState.centerLat=S.gps.lat;mapState.centerLon=S.gps.lon;
       centerOnLatLon(S.gps.lat,S.gps.lon,AC_SCALE);
     } else if(navigator.geolocation){
       navigator.geolocation.getCurrentPosition(pos=>{
@@ -9598,14 +9600,14 @@ if(S.flightMode){
     const c=document.getElementById('map-canvas');if(!c)return;
     const newScale=mapState.scale*1.25;
     if(_selFixLat!==null&&_selFixLon!==null){centerOnLatLon(_selFixLat,_selFixLon,newScale,c);}
-    else if(S.gps&&S.gps.lat!==undefined){centerOnLatLon(S.gps.lat,S.gps.lon,newScale,c);}
+    else if(mapState.centerLat!==undefined&&mapState.centerLon!==undefined){centerOnLatLon(mapState.centerLat,mapState.centerLon,newScale,c);}
     else{zoomAt(c.offsetWidth/2,c.offsetHeight/2,1.25);mapRaf(c);}
   };
   document.getElementById('flight-btn-zout').onclick=()=>{
     const c=document.getElementById('map-canvas');if(!c)return;
     const newScale=mapState.scale*0.8;
     if(_selFixLat!==null&&_selFixLon!==null){centerOnLatLon(_selFixLat,_selFixLon,newScale,c);}
-    else if(S.gps&&S.gps.lat!==undefined){centerOnLatLon(S.gps.lat,S.gps.lon,newScale,c);}
+    else if(mapState.centerLat!==undefined&&mapState.centerLon!==undefined){centerOnLatLon(mapState.centerLat,mapState.centerLon,newScale,c);}
     else{zoomAt(c.offsetWidth/2,c.offsetHeight/2,0.8);mapRaf(c);}
   };
   document.getElementById('flight-btn-ctr').onclick=()=>{
@@ -9630,8 +9632,11 @@ if(S.flightMode){
     } else {mapState.offX=0;mapState.offY=0;saveMapState();const c2=document.getElementById('map-canvas');if(c2)drawMap(c2);}
   };
   document.getElementById('flight-btn-ac').onclick=()=>{
+    _selFixLat=null;_selFixLon=null;
     const AC_SCALE=mapState.scale;
-    if(S.gps&&S.gps.lat!==null&&S.gps.lat!==undefined){centerOnLatLon(S.gps.lat,S.gps.lon,AC_SCALE);}
+    if(S.gps&&S.gps.lat!==null&&S.gps.lat!==undefined){
+      mapState.centerLat=S.gps.lat;mapState.centerLon=S.gps.lon;
+      centerOnLatLon(S.gps.lat,S.gps.lon,AC_SCALE);}
     else if(navigator.geolocation){navigator.geolocation.getCurrentPosition(pos=>{centerOnLatLon(pos.coords.latitude,pos.coords.longitude,AC_SCALE);},err=>{
     // Fallback: last reported fix → last selected fix → first fix with coords → dep
     const _lastReported=S.fp.waypoints.slice().reverse().find(w=>w.actualTime&&!w.bypassed&&w.lat!==undefined);
