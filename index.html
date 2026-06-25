@@ -558,7 +558,7 @@ const DEF=()=>({
   flightMode:false,
   activePanel:null, // 'fixes','comms','log','timer','checklist','settings' or null
   fp:{callsign:'',type:'',dep:'',dest:'',level:'',mach:'',selcal:'',
-      trackType:'random',trackLetter:'',tmi:'',takeoff:'',landingTime:'',slop:0,origWaypoints:null,coastOutIdx:-1,coastInIdx:-1,oepIdx:-1,oxfIdx:-1,
+      trackType:'random',trackLetter:'',secondTrack:'',tmi:'',takeoff:'',landingTime:'',slop:0,origWaypoints:null,coastOutIdx:-1,coastInIdx:-1,oepIdx:-1,oxfIdx:-1,
       altn1:'',altn2:'',ableFl:'',etpManual:'',engineOutMach:'',sob:'',waypoints:[],
       takeoffFuel:'',
       callupEntryFix:'',callupEntryTime:'',callupFmsPos:'',
@@ -3734,6 +3734,10 @@ function vPlan(){
       </select>
       <input id="ftrk" value="${esc(fp.trackType==='nat'?fp.trackLetter:'')}" placeholder="Track letter (A-Z)" style="width:150px" ${fp.trackType!=='nat'?'disabled':''}>
     </div>
+  </div>
+  <div class="fld">
+    <label class="lbl">2nd Choice NAT Track (optional — random route backup)</label>
+    <input id="fst" value="${esc(fp.secondTrack||'')}" placeholder="e.g. X" maxlength="1" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="this.value=this.value.toUpperCase().replace(/[^A-Z]/g,'').slice(0,1);S.fp.secondTrack=this.value;saveAll()" ${fp.trackType==='nat'?'disabled':''}>
   </div>`;
   const slopSel=`<div class="fld">
     <label class="lbl">SLOP Offset</label>
@@ -3890,7 +3894,7 @@ function vPlan(){
 }
 
 function bPlan(){
-  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',fetp:'etpManual',fsob:'sob'}; // fc,ft,fl,fs,ftmi now use oninput
+  const FM={fd:'dep',fds:'dest',fa1:'altn1',fa2:'altn2',fetp:'etpManual',fsob:'sob',fst:'secondTrack'}; // fc,ft,fl,fs,ftmi now use oninput
   Object.entries(FM).forEach(([id,k])=>document.getElementById(id)?.addEventListener('input',e=>{
     // Force uppercase for identifier fields
     const UC=['fd','fds','fc','ft','fa1','fa2','fl','fs','ftmi'];
@@ -5744,7 +5748,16 @@ function _qCallup(){
   // RMK/2ND NAT only if user has backup track preference
   // Track route: include track letter in main field, no RMK prefix needed
   // Random route: just F[level] MAX FL[able], no RMK
-  const acarsRmk=`-MAX ${cpdlcMaxFL}`;
+  // Track route includes NAT letter in free text field; random route just has MAX FL
+  // ACARS format:
+  // On a track: -NAT W MAX FL410
+  // Random with 2nd choice: -RMK/2ND NAT W MAX FL410
+  // Pure random: -MAX FL410
+  const acarsRmk=isTrack
+    ?`-NAT ${fp.trackLetter.toUpperCase()} MAX ${cpdlcMaxFL}`
+    :fp.secondTrack
+      ?`-RMK/2ND NAT ${fp.secondTrack.toUpperCase()} MAX ${cpdlcMaxFL}`
+      :`-MAX ${cpdlcMaxFL}`;
   s+=`ACARS: ${oef}/${oefETO.replace('Z','')} ${cpdlcMach}${cpdlcFL}${acarsRmk}`;
   if(isGander)s+='\n\n[EXPECT: RCL RECEIVED — NOT A CLEARANCE]';
   else if(isShanwick)s+='\n\n[IF NO RESPONSE IN 15 MIN — OR NO CLEARANCE BY 30 MIN BEFORE OEP — USE VOICE BELOW]';
@@ -8322,14 +8335,28 @@ function logETPSnapshot(){
   S.reports.unshift({id:Date.now()+2,savedAt:new Date().toISOString(),type:'event',eventType:'etp',time:utcNow(),callsign:S.fp.callsign||'',dep:S.fp.dep||'',dest:S.fp.dest||'',etpData:etpData,level:S.fp.level||'',weight:S.fp.etpWeight||''});
   saveAll();
 }
+// Synchronous fix lookup — checks ALT_DB and NAT_FIXES_VERIFIED only, no IDB
+function lookupFixSync(id){
+  if(!id)return null;
+  const k=id.toUpperCase().trim();
+  if(NAT_FIXES_VERIFIED[k])return{lat:NAT_FIXES_VERIFIED[k][0],lon:NAT_FIXES_VERIFIED[k][1]};
+  if(ALT_DB[k])return{lat:ALT_DB[k].lat,lon:ALT_DB[k].lon};
+  const wpt=S.fp.waypoints.find(w=>w.name&&w.name.toUpperCase()===k&&w.lat!==undefined);
+  if(wpt)return{lat:wpt.lat,lon:wpt.lon};
+  return null;
+}
+
 function calcAllETPs(){
   // Calculate all ETP pairs for depress and OEI scenarios
   const fp=S.fp;
   const wpts=(fp.waypoints||[]).filter(w=>w.lat!==undefined);
   const weight=fp.etpWeight||42000;
   const altFt=fp.etpAlt?+(fp.etpAlt.replace(/FL|ft/gi,''))*100:39000;
-  const oeiTas=etpOEISpeed(weight,altFt);
-  const depressTas=290; // KIAS at 10,000ft
+  // Use filed engine-out Mach if set, otherwise use weight/alt formula
+  const oeiTas=fp.engineOutMach?
+    (pTAS(fp.engineOutMach,fp.level||'FL370')||etpOEISpeed(weight,altFt)):
+    etpOEISpeed(weight,altFt);
+  const depressTas=290; // KIAS at 10,000ft emergency descent
   const results=[];
   (fp.etpPairs||[]).forEach(function(pair,i){
     if(!pair.altnA||!pair.altnB)return;
@@ -8803,34 +8830,105 @@ function drawLandmasses(ctx,proj,W,H2){
   (function(){
     const etpAll=calcAllETPs();
     if(!etpAll.length)return;
-    // Helper: draw a perpendicular tick mark at a lat/lon point across the route
-    function drawETPTick(lat,lon,color,label,side){
+
+    // Live time from GPS to an alternate airport
+    function liveTimeToAltn(altnId,eoTas){
+      const gps=S.gps;
+      if(!gps||gps.lat==null)return null;
+      const coord=lookupFixSync(altnId);
+      if(!coord)return null;
+      const distNm=gcD(gps.lat,gps.lon,coord.lat,coord.lon);
+      // Wind component on direct track
+      const bearing=Math.atan2(
+        Math.sin((coord.lon-gps.lon)*Math.PI/180)*Math.cos(coord.lat*Math.PI/180),
+        Math.cos(gps.lat*Math.PI/180)*Math.sin(coord.lat*Math.PI/180)-
+        Math.sin(gps.lat*Math.PI/180)*Math.cos(coord.lat*Math.PI/180)*Math.cos((coord.lon-gps.lon)*Math.PI/180)
+      )*180/Math.PI;
+      // Use nearest waypoint wind
+      const nearWpt=S.fp.waypoints.filter(w=>w.lat!=null&&w.wind).reduce((best,w)=>{
+        const d=gcD(gps.lat,gps.lon,w.lat,w.lon);
+        return(!best||d<best.d)?{d,wind:w.wind}:best;
+      },null);
+      let gs=eoTas;
+      if(nearWpt&&nearWpt.wind){
+        const wParts=nearWpt.wind.match(/(\d{3})\/(\d{2,3})/);
+        if(wParts){
+          const wDir=parseInt(wParts[1]),wSpd=parseInt(wParts[2]);
+          const hdg=(bearing+360)%360;
+          const wComp=wSpd*Math.cos((wDir-hdg)*Math.PI/180);
+          gs=Math.max(eoTas+wComp,50);
+        }
+      }
+      return distNm/gs*60; // minutes
+    }
+
+    // Format minutes
+    function fmtMin(m){
+      if(m==null||isNaN(m))return'';
+      const h=Math.floor(m/60);const mm=Math.round(m%60);
+      return h>0?h+'h'+String(mm).padStart(2,'0')+'m':mm+'m';
+    }
+
+    // Draw ETP tick with alternates on each side
+    function drawETPTick(lat,lon,color,labelLeft,labelRight,scenario){
       if(!lat||!lon)return;
       const p=proj(lat,lon);
-      const tickLen=Math.max(12,Math.min(30,Math.round(18*mapState.scale*0.5)));
-      // Draw perpendicular line (vertical on mercator approximation)
+      if(p.x<-50||p.x>W+50||p.y<-50||p.y>H2+50)return;
+      const tickLen=Math.max(14,Math.min(32,Math.round(20*mapState.scale*0.5)));
+      const etpFontSz=Math.max(9,Math.min(15,Math.round(9*mapState.scale*0.8)));
+
+      // Tick line
       ctx.strokeStyle=color;ctx.lineWidth=2.5;ctx.setLineDash([]);
       ctx.beginPath();ctx.moveTo(p.x,p.y-tickLen);ctx.lineTo(p.x,p.y+tickLen);ctx.stroke();
-      // Small dot at center
       ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();
-      // Label
-      const etpFontSz=Math.max(9,Math.min(16,Math.round(9*mapState.scale*0.8)));
-      ctx.fillStyle=color;ctx.font='bold '+etpFontSz+'px monospace';
-      ctx.textAlign=side==='right'?'left':'right';
-      const xOff=side==='right'?5:-5;
-      ctx.fillText(label,p.x+xOff,p.y-tickLen+4);
+
+      // Scenario label above tick center
+      ctx.font='bold '+etpFontSz+'px monospace';
+      ctx.fillStyle=color;ctx.textAlign='center';
+      ctx.fillText(scenario,p.x,p.y-tickLen-2);
+
+      // Left alternate (divert left/back)
+      ctx.font=(etpFontSz-1)+'px monospace';
+      ctx.fillStyle=color;ctx.textAlign='right';
+      ctx.fillText('← '+labelLeft,p.x-6,p.y+4);
+
+      // Right alternate (divert right/forward)
+      ctx.textAlign='left';
+      ctx.fillText(labelRight+' →',p.x+6,p.y+4);
     }
-    etpAll.forEach(function(e,i){
-      const side=i%2===0?'right':'left';
-      function fmtMin(m){if(!m)return'';const h=Math.floor(m/60);const mm=Math.round(m%60);return h>0?h+'h'+String(mm).padStart(2,'0')+'m':mm+'m';}
-      if(e.oei){
-        const lbl='ENG/'+(e.altnA||'?')+' '+fmtMin(e.oei.timeToA);
-        drawETPTick(e.oei.lat,e.oei.lon,'#ff8c00',lbl,side);
+
+    // Draw alternate airport dots with live time
+    function drawAltnDot(altnId,color,eoTas){
+      const coord=lookupFixSync(altnId);
+      if(!coord)return;
+      const p=proj(coord.lat,coord.lon);
+      if(p.x<-20||p.x>W+20||p.y<-20||p.y>H2+20)return;
+      ctx.fillStyle=color;ctx.beginPath();ctx.arc(p.x,p.y,5,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#000';ctx.lineWidth=1;ctx.stroke();
+      // Live time label
+      const t=liveTimeToAltn(altnId,eoTas);
+      const etpFontSz=Math.max(9,Math.min(14,Math.round(9*mapState.scale*0.8)));
+      ctx.font='bold '+etpFontSz+'px monospace';
+      ctx.fillStyle=color;ctx.textAlign='center';
+      ctx.fillText(altnId,p.x,p.y-10);
+      if(t!=null){ctx.fillText(fmtMin(t),p.x,p.y-20);}
+    }
+
+    // Track which alternates we've already drawn dots for
+    const drawnAltns=new Set();
+
+    etpAll.forEach(function(e){
+      const altnA=e.altnA||'?';
+      const altnB=e.altnB||'?';
+      if(e.oei&&e.oei.lat){
+        drawETPTick(e.oei.lat,e.oei.lon,'#ff8c00',altnA,altnB,'ENG');
       }
-      if(e.dep){
-        const lbl='PRESS/'+(e.altnA||'?')+' '+fmtMin(e.dep.timeToA);
-        drawETPTick(e.dep.lat,e.dep.lon,'#ff4444',lbl,side==='right'?'left':'right');
+      if(e.dep&&e.dep.lat){
+        drawETPTick(e.dep.lat,e.dep.lon,'#ff4444',altnA,altnB,'PRESS');
       }
+      // Draw alternate dots with live time (once each)
+      if(!drawnAltns.has(altnA)){drawnAltns.add(altnA);drawAltnDot(altnA,'#ff8c00',e.oeiTas||250);}
+      if(!drawnAltns.has(altnB)){drawnAltns.add(altnB);drawAltnDot(altnB,'#ff8c00',e.oeiTas||250);}
     });
   })();
 
