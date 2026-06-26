@@ -4920,6 +4920,15 @@ function markOver(i){
 }
 
 function genScriptForWpt(i){
+  if(!S.selStation){
+    alert('Select a radio station in the COMMS panel first.');
+    S.activePanel='comms';
+    const content=document.getElementById('flight-panel-content');
+    if(content){content.innerHTML=vComms();_bindInPanel(bComms);}
+    const fp2=document.getElementById('flight-panel');
+    if(fp2)fp2.classList.add('open');
+    return;
+  }
   const w=S.fp.waypoints[i];
   // Coord priority: FMS manual - iPad GPS - flag
   let coordSource,coordFlag='';
