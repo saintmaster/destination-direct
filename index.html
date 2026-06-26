@@ -429,7 +429,7 @@ function openLB(src,wptIdx){
   // Pre-fill if FMS coords already entered
   if(_lbWptIdx>=0){
     const w=S.fp.waypoints[_lbWptIdx];
-    if(w?.fmsLat!==undefined){if(lat)lat.value=w.fmsLat;if(lon)lon.value=w.fmsLon;}
+    if(w?.fmsLat!==undefined){if(lat)lat.value=w.fmsLatStr||w.fmsLat;if(lon)lon.value=w.fmsLonStr||w.fmsLon;}
   }
   lb.classList.add('open');
   document.body.style.overflow='hidden';
