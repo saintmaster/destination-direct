@@ -4964,7 +4964,23 @@ function genScriptForWpt(i){
   const logIdx=S.reports.findIndex(r=>r.position===w.name&&r.time===w.actualTime);
   if(logIdx>=0)S.reports[logIdx]={...S.reports[logIdx],phraseology:phr,...S.posrep};
   saveAll();
-  setTab('posrep'); // navigate to pos report to show the script
+  // Open COMMS panel and show pos report script via showQuickScript
+  S.activePanel='comms';
+  const content=document.getElementById('flight-panel-content');
+  if(content){content.innerHTML=vComms();_bindInPanel(bComms);}
+  const fp2=document.getElementById('flight-panel');
+  if(fp2)fp2.classList.add('open');
+  setTimeout(()=>{
+    const out=document.getElementById('quick-script-out');
+    const txt=document.getElementById('quick-script-text');
+    const lbl=document.getElementById('quick-script-label');
+    if(out&&txt){
+      txt.textContent=phr;
+      if(lbl)lbl.textContent='POS REPORT \u2014 '+w.name;
+      out.style.display='block';
+      out.scrollIntoView({behavior:'smooth',block:'nearest'});
+    }
+  },100);
 }
 
 function fillPR(i,overrideTime,ipadLat,ipadLon){
