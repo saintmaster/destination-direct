@@ -3475,7 +3475,6 @@ function doFMSPhotoFAB(){
         autoSaveReport();
         S.timer.preset=600;S.timer.secs=600;S.timer.running=true;S.timer.warnFired=false;
         tDeadline();clearInterval(S.timer.iid);S.timer.iid=setInterval(tTick,1000);tSave();
-        beep('mrk');
         logError('📷 Fix crossing marked: '+w.name,'info');
       }
     } else if(assocIdx>=0){
