@@ -3737,7 +3737,7 @@ function vPlan(){
         ${fp.oepIdx===i?'<span style="font-size:9px;color:#ff8c00;font-weight:bold;margin-left:3px">OEP</span>':''}
         ${fp.oxfIdx===i?'<span style="font-size:9px;color:#9b4dff;font-weight:bold;margin-left:3px">OXF</span>':''}
         ${windBadge}
-        ${w.eto?`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 4px">⏱${w.eto}Z</span>`:`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#3a4a2a;cursor:pointer;background:#0a0f0a;border:1px solid #1a2a1a;border-radius:2px;padding:1px 4px">+ETO</span>`}
+        ${w.eto?`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#ffd700;cursor:pointer;background:#1a1500;border:1px solid #3a3000;border-radius:2px;padding:1px 4px">⏱${w.eto}Z</span>`:`<span onclick="promptWptETO(${i})" style="font-size:9px;color:#7a9a6a;cursor:pointer;background:#0a0f0a;border:1px solid #2a4a2a;border-radius:2px;padding:1px 4px">+ETO</span>`}
         ${w.actualTime?`<span style="font-size:9px;color:#90ee90"> ✓${w.actualTime}Z</span>`:''}
         <span onclick="togWE(${i})" style="cursor:pointer;font-size:13px;color:${hc?'#40a040':'#4a7a9a'}">📍</span>
         <span onclick="dctFromHere(${i})" style="color:#4a7aaa;cursor:pointer;font-size:11px;margin-left:4px;background:#0a1520;border:1px solid #1a3a5a;border-radius:2px;padding:1px 5px" title="Reroute: DCT to this fix">DCT</span>
@@ -4677,7 +4677,7 @@ function vProg(){
         })():'' }
         ${S.fp.coastInIdx===i?'<span style="font-size:9px;background:#003a1a;border:1px solid #00d46a;color:#00d46a;border-radius:2px;padding:1px 5px;margin-left:2px">COAST IN</span>':''}
         ${w.bypassed?'<span style="font-size:9px;color:#4a4a8a;margin-left:4px;border:1px solid #2a2a5a;border-radius:2px;padding:0 4px">DCT</span>':done?`<span style="font-size:9px;color:#90ee90;margin-left:4px">✓${esc(w.actualTime)}Z</span>`:''}
-        <span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;cursor:pointer;padding:1px 4px;margin-left:2px;border-radius:2px;${w.eto?'color:#ffd700;background:#1a1500;border:1px solid #3a3000':'color:#2a3a2a;background:#0a0f0a;border:1px solid #1a2a1a'}">${w.eto?'⏱'+w.eto+'Z':'+ETO'}</span>
+        <span onclick="event.stopPropagation();promptWptETO(${i})" style="font-size:9px;cursor:pointer;padding:1px 4px;margin-left:2px;border-radius:2px;${w.eto?'color:#ffd700;background:#1a1500;border:1px solid #3a3000':'color:#7a9a6a;background:#0a0f0a;border:1px solid #2a4a2a'}">${w.eto?'⏱'+w.eto+'Z':'+ETO'}</span>
         ${photo}
         <span style="color:#2a4a6a;margin-left:4px">${exp?'▲':'▼'}</span>
       </div>
@@ -4960,7 +4960,10 @@ function genScriptForWpt(i){
     S.posrep.lat='';S.posrep.lon='';
   }
   if(w.wind)S.posrep.wind=w.wind;
-  if(w.lat!==undefined&&S.posrep.nextWpt){
+  const nextWptObj=fp.waypoints[i+1];
+  if(nextWptObj?.eto){
+    S.posrep.nextEta=nextWptObj.eto;
+  } else if(w.lat!==undefined&&S.posrep.nextWpt){
     const r=calcETA({lat:w.lat,lon:w.lon},S.posrep.nextWpt,S.posrep.time,fp.waypoints,fp.mach,S.posrep.altitude||fp.level,w.wind||S.posrep.wind||'');
     if(r)S.posrep.nextEta=r.eta;
   }
