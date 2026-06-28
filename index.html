@@ -6000,14 +6000,27 @@ async function g2BLESend(text){
   };
   let st=toast('Scanning for G2...','#7dcfff');
   try{
-    const device=await navigator.bluetooth.requestDevice({
-      filters:[{namePrefix:'Even G2'}],optionalServices:[G2_SVC]
-    });
+    let device;
+    try{
+      device=await navigator.bluetooth.requestDevice({
+        filters:[{namePrefix:'Even G2'}],
+        optionalServices:[G2_SVC,'1a719750-fd32-cf83-353c-5d998441da2b']
+      });
+    }catch(e2){
+      // Fallback — show all devices
+      device=await navigator.bluetooth.requestDevice({
+        acceptAllDevices:true,
+        optionalServices:[G2_SVC,'1a719750-fd32-cf83-353c-5d998441da2b']
+      });
+    }
+    if(!device||!device.gatt){toast('BLE: no device returned','#ff6b6b');return;}
     st.remove();st=toast('Connecting...','#7dcfff');
     st.remove();st=toast('Connecting...','#7dcfff');
     const server=await device.gatt.connect();
     st.remove();st=toast('Getting service...','#7dcfff');
-    const svc=await server.getPrimaryService(G2_SVC);
+    let svc;
+    try{svc=await server.getPrimaryService(G2_SVC);}
+    catch(e2){svc=await server.getPrimaryService('1a719750-fd32-cf83-353c-5d998441da2b');}
     st.remove();st=toast('Getting write char...','#7dcfff');
     const wChar=await svc.getCharacteristic(G2_WRITE);
     st.remove();st=toast('Getting notify char...','#7dcfff');
@@ -6079,9 +6092,11 @@ async function g2BLESend(text){
 
   }catch(e){
     st?.remove();
-    if(e.name==='NotFoundError')toast('No G2 found — glasses powered on?','#ff6b6b');
-    else toast('BLE ['+e.name+']: '+(e.message||'unknown'),'#ff6b6b');
-    console.error('G2 BLE:',e.name,e.message,e);
+    const name=e?.name||typeof e;
+    const msg=e?.message||String(e)||'unknown';
+    if(name==='NotFoundError')toast('No G2 found — glasses powered on?','#ff6b6b');
+    else toast('BLE ['+name+']: '+msg,'#ff6b6b');
+    console.error('G2 BLE raw error:',e);
   }
 }
 // ── End G2 BLE ────────────────────────────────────────────────────────────
