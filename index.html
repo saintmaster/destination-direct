@@ -6004,10 +6004,15 @@ async function g2BLESend(text){
       filters:[{namePrefix:'Even G2'}],optionalServices:[G2_SVC]
     });
     st.remove();st=toast('Connecting...','#7dcfff');
+    st.remove();st=toast('Connecting...','#7dcfff');
     const server=await device.gatt.connect();
+    st.remove();st=toast('Getting service...','#7dcfff');
     const svc=await server.getPrimaryService(G2_SVC);
+    st.remove();st=toast('Getting write char...','#7dcfff');
     const wChar=await svc.getCharacteristic(G2_WRITE);
+    st.remove();st=toast('Getting notify char...','#7dcfff');
     const nChar=await svc.getCharacteristic(G2_NOTIF);
+    st.remove();st=toast('Starting notify...','#7dcfff');
     await nChar.startNotifications();
     const send=async(p,delay=100)=>{await wChar.writeValueWithoutResponse(p);await new Promise(r=>setTimeout(r,delay));};
 
@@ -6075,8 +6080,8 @@ async function g2BLESend(text){
   }catch(e){
     st?.remove();
     if(e.name==='NotFoundError')toast('No G2 found — glasses powered on?','#ff6b6b');
-    else toast('BLE: '+e.message,'#ff6b6b');
-    console.error('G2 BLE:',e);
+    else toast('BLE ['+e.name+']: '+(e.message||'unknown'),'#ff6b6b');
+    console.error('G2 BLE:',e.name,e.message,e);
   }
 }
 // ── End G2 BLE ────────────────────────────────────────────────────────────
