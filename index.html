@@ -4548,10 +4548,6 @@ function bCallup(){
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');alert('Copied!');});
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
-    const scriptText=S.callupScript||'';
-    if(navigator.bluetooth&&scriptText){
-      g2BLESend(scriptText);return;
-    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -5207,7 +5203,7 @@ function vPosrep(){
       <div id="quick-script-out" style="display:none;margin-top:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <div id="quick-script-label" style="font-size:9px;color:#4fc3f7;letter-spacing:.12em"></div>
-          <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','☁ GLASSES','font-size:10px;padding:4px 10px')}${btn('b2','btn-q-ble','⬡ BLE','font-size:10px;padding:4px 10px')}</div>
+          <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','GLASSES','font-size:10px;padding:4px 10px')}</div>
         </div>
         <div id="quick-script-text" class="pb" style="font-size:12px;line-height:1.8"></div>
       </div>
@@ -5380,10 +5376,6 @@ function bPosrep(){
   document.getElementById('btn-q-cpdlc')?.addEventListener('click',()=>showQuickScript('CPDLC LOGON',_qCPDLC&&_qCPDLC()||''));
   document.getElementById('btn-q-divert')?.addEventListener('click',()=>showQuickScript('DIVERT',_qDivert&&_qDivert()||''));
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
-    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
-    if(navigator.bluetooth&&scriptText){
-      g2BLESend(scriptText);return;
-    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -5396,12 +5388,6 @@ function bPosrep(){
     const txt=document.getElementById('quick-script-text');
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>alert('Copied!'));
   });
-  document.getElementById('btn-q-ble')?.addEventListener('click',()=>{
-    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
-    if(scriptText)g2BLESend(scriptText);
-    else alert('No script to send — generate a script first.');
-  });
-
   document.getElementById('btn-gps')?.addEventListener('click',()=>{
     const st=document.getElementById('gps-st');
     const disp=document.getElementById('gps-disp');
@@ -5594,7 +5580,7 @@ function vComms(){
   const scriptOut=`<div id="quick-script-out" style="display:none;margin-top:10px;background:#050c18;border:1px solid #1e3a5f;border-radius:6px;padding:10px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <div id="quick-script-label" style="font-size:9px;color:#4fc3f7;letter-spacing:.12em;font-weight:bold"></div>
-      <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','☁ GLASSES','font-size:10px;padding:4px 10px')}${btn('b2','btn-q-ble','⬡ BLE','font-size:10px;padding:4px 10px')}</div>
+      <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','GLASSES','font-size:10px;padding:4px 10px')}</div>
     </div>
     <div id="quick-script-text" style="font-size:12px;line-height:1.8;color:#c8d8e8;white-space:pre-wrap;font-family:monospace"></div>
   </div>`;
@@ -6004,14 +5990,13 @@ async function g2BLESend(text){
     try{
       device=await navigator.bluetooth.requestDevice({
         filters:[{namePrefix:'Even G2'}],
-        optionalServices:[G2_SVC,'1a719750-fd32-cf83-353c-5d998441da2b']
+        optionalServices:[G2_SVC,'1a719750-fd32-cf83-353c-5d998441da2b',
+          '6e400001-b5a3-f393-e0a9-e50e24dcca9e', // Nordic UART
+          '0000180a-0000-1000-8000-00805f9b34fb'  // Device Info
+        ]
       });
     }catch(e2){
-      // Fallback — show all devices
-      device=await navigator.bluetooth.requestDevice({
-        acceptAllDevices:true,
-        optionalServices:[G2_SVC,'1a719750-fd32-cf83-353c-5d998441da2b']
-      });
+      device=await navigator.bluetooth.requestDevice({acceptAllDevices:true});
     }
     if(!device||!device.gatt){toast('BLE: no device returned','#ff6b6b');return;}
     st.remove();st=toast('Connecting...','#7dcfff');
@@ -6019,8 +6004,23 @@ async function g2BLESend(text){
     const server=await device.gatt.connect();
     st.remove();st=toast('Getting service...','#7dcfff');
     let svc;
-    try{svc=await server.getPrimaryService(G2_SVC);}
-    catch(e2){svc=await server.getPrimaryService('1a719750-fd32-cf83-353c-5d998441da2b');}
+    try{
+      svc=await server.getPrimaryService(G2_SVC);
+    }catch(e2){
+      try{
+        svc=await server.getPrimaryService('1a719750-fd32-cf83-353c-5d998441da2b');
+      }catch(e3){
+        // Enumerate all and alert with UUIDs
+        try{
+          const svcs=await server.getPrimaryServices();
+          const uuids=svcs.map(s=>s.uuid).join('\n');
+          alert('G2 services:\n'+uuids);
+          svc=svcs[0];
+        }catch(e4){
+          throw new Error('Cannot access services. Error2='+e2+' Error3='+e3+' Error4='+e4);
+        }
+      }
+    }
     st.remove();st=toast('Getting write char...','#7dcfff');
     const wChar=await svc.getCharacteristic(G2_WRITE);
     st.remove();st=toast('Getting notify char...','#7dcfff');
@@ -6267,16 +6267,7 @@ function bComms(){
     const txt=document.getElementById('quick-script-text');
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>{});
   });
-  document.getElementById('btn-q-ble')?.addEventListener('click',()=>{
-    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
-    if(scriptText)g2BLESend(scriptText);
-    else alert('No script to send — generate a script first.');
-  });
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
-    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
-    if(navigator.bluetooth&&scriptText){
-      g2BLESend(scriptText);return;
-    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -6343,10 +6334,6 @@ function bComms(){
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');});
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
-    const scriptText=S.callupScript||'';
-    if(navigator.bluetooth&&scriptText){
-      g2BLESend(scriptText);return;
-    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
