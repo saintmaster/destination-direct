@@ -4548,6 +4548,12 @@ function bCallup(){
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');alert('Copied!');});
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
+    const scriptText=S.callupScript||'';
+    if(navigator.bluetooth&&scriptText){
+      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
+        g2BLESend(scriptText);return;
+      }
+    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -5376,6 +5382,12 @@ function bPosrep(){
   document.getElementById('btn-q-cpdlc')?.addEventListener('click',()=>showQuickScript('CPDLC LOGON',_qCPDLC&&_qCPDLC()||''));
   document.getElementById('btn-q-divert')?.addEventListener('click',()=>showQuickScript('DIVERT',_qDivert&&_qDivert()||''));
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
+    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
+    if(navigator.bluetooth&&scriptText){
+      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
+        g2BLESend(scriptText);return;
+      }
+    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -5890,6 +5902,184 @@ function _qDivert(){
   return`${st}, ${cs}, PAN PAN, PAN PAN, PAN PAN.\n\n[WAIT FOR ATC]\n\n${cs},\nDIVERTING TO ${divertTo}${divertICAO?' ('+divertICAO+')':''},\nPRESENT POSITION,\nDESCENDING ${fl},\nSOULS ON BOARD ${fp.sob||'[POB]'},\nFUEL REMAINING [HH+MM],\nOVER.`;
   }
 
+// ── Even Realities G2 BLE Teleprompter ────────────────────────────────────
+// Requires Web Bluetooth (Bluefy on iOS). Protocol: github.com/i-soxi/even-g2-protocol
+const G2_SVC   = '00002760-08c2-11e1-9073-0e8ac72e0000';
+const G2_WRITE = '00002760-08c2-11e1-9073-0e8ac72e5401';
+const G2_NOTIF = '00002760-08c2-11e1-9073-0e8ac72e5402';
+
+function g2CRC(data){
+  let crc=0xFFFF;
+  for(const b of data){crc^=b<<8;for(let i=0;i<8;i++){crc=(crc&0x8000)?(crc<<1)^0x1021:crc<<1;crc&=0xFFFF;}}
+  return crc;
+}
+function g2AddCRC(pkt){
+  const crc=g2CRC(pkt.slice(8)); // CRC over payload only (skip 8-byte header)
+  const out=new Uint8Array(pkt.length+2);
+  out.set(pkt);out[pkt.length]=crc&0xFF;out[pkt.length+1]=(crc>>8)&0xFF;
+  return out;
+}
+function g2Pkt(seq,svcHi,svcLo,payload){
+  const hdr=new Uint8Array([0xAA,0x21,seq&0xFF,payload.length+2,0x01,0x01,svcHi,svcLo]);
+  const pkt=new Uint8Array(8+payload.length);
+  pkt.set(hdr);pkt.set(payload,8);
+  return g2AddCRC(pkt);
+}
+function g2VI(v){ // varint encode
+  const r=[];do{let b=v&0x7F;v>>>=7;if(v>0)b|=0x80;r.push(b);}while(v>0);return new Uint8Array(r);
+}
+function g2Cat(...a){ // concat Uint8Arrays
+  const t=a.reduce((s,x)=>s+x.length,0),o=new Uint8Array(t);let p=0;
+  for(const x of a){o.set(x,p);p+=x.length;}return o;
+}
+function g2LV(tag,data){ // length-value field
+  const d=data instanceof Uint8Array?data:new TextEncoder().encode(data);
+  return g2Cat(new Uint8Array([tag]),g2VI(d.length),d);
+}
+
+function g2BuildAuth(){
+  const ts=Math.floor(Date.now()/1000);
+  const tsVI=g2VI(ts);
+  // Fixed transaction ID from Python source
+  const txid=new Uint8Array([0xE8,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x01]);
+  const tsPayload=(msgId)=>g2Cat(
+    new Uint8Array([0x08,0x80,0x01,0x10]),g2VI(msgId),
+    new Uint8Array([0x82,0x08,0x11,0x08]),tsVI,
+    new Uint8Array([0x10]),txid
+  );
+  return[
+    // Auth 1: Capability query (0x80-00)
+    g2AddCRC(new Uint8Array([0xAA,0x21,0x01,0x0C,0x01,0x01,0x80,0x00,0x08,0x04,0x10,0x0C,0x1A,0x04,0x08,0x01,0x10,0x04])),
+    // Auth 2: Capability response (0x80-20)
+    g2AddCRC(new Uint8Array([0xAA,0x21,0x02,0x0A,0x01,0x01,0x80,0x20,0x08,0x05,0x10,0x0E,0x22,0x02,0x08,0x02])),
+    // Auth 3: Time sync (0x80-20, msg_id=0x0F)
+    g2Pkt(0x03,0x80,0x20,tsPayload(0x0F)),
+    // Auth 4: Capability (0x80-00, msg_id=0x10)
+    g2AddCRC(new Uint8Array([0xAA,0x21,0x04,0x0C,0x01,0x01,0x80,0x00,0x08,0x04,0x10,0x10,0x1A,0x04,0x08,0x01,0x10,0x04])),
+    // Auth 5: Capability (0x80-00, msg_id=0x11)
+    g2AddCRC(new Uint8Array([0xAA,0x21,0x05,0x0C,0x01,0x01,0x80,0x00,0x08,0x04,0x10,0x11,0x1A,0x04,0x08,0x01,0x10,0x04])),
+    // Auth 6: Capability response (0x80-20, msg_id=0x12)
+    g2AddCRC(new Uint8Array([0xAA,0x21,0x06,0x0A,0x01,0x01,0x80,0x20,0x08,0x05,0x10,0x12,0x22,0x02,0x08,0x01])),
+    // Auth 7: Time sync (0x80-20, msg_id=0x13)
+    g2Pkt(0x07,0x80,0x20,tsPayload(0x13)),
+  ];
+}
+
+function g2FormatPages(text,charsPerLine=25,linesPerPage=10){
+  const lines=[];
+  for(const line of text.split('\n')){
+    if(!line.trim()){lines.push('');continue;}
+    const words=line.split(' ');let cur='';
+    for(const w of words){
+      if(cur&&(cur+' '+w).length>charsPerLine){lines.push(cur.trim());cur=w;}
+      else{cur=cur?cur+' '+w:w;}
+    }
+    if(cur.trim())lines.push(cur.trim());
+  }
+  while(lines.length<linesPerPage)lines.push(' ');
+  const pages=[];
+  for(let i=0;i<lines.length;i+=linesPerPage){
+    const pg=lines.slice(i,i+linesPerPage);
+    while(pg.length<linesPerPage)pg.push(' ');
+    pages.push(pg.join('\n')+' \n');
+  }
+  while(pages.length<14)pages.push(Array(linesPerPage).fill(' ').join('\n')+' \n');
+  return pages;
+}
+
+async function g2BLESend(text){
+  if(!navigator.bluetooth){
+    alert('Web Bluetooth not available.\nOpen Destination Direct in Bluefy for offline glasses push.');
+    return;
+  }
+  const toast=(msg,col='#50c878')=>{
+    const t=document.createElement('div');t.textContent=msg;
+    t.style.cssText=`position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#0a1520;color:${col};padding:8px 16px;border-radius:6px;font-size:12px;z-index:9999;border:1px solid ${col};text-align:center;max-width:80vw`;
+    document.body.appendChild(t);setTimeout(()=>t.remove(),3500);return t;
+  };
+  let st=toast('Scanning for G2...','#7dcfff');
+  try{
+    const device=await navigator.bluetooth.requestDevice({
+      filters:[{namePrefix:'Even G2'}],optionalServices:[G2_SVC]
+    });
+    st.remove();st=toast('Connecting...','#7dcfff');
+    const server=await device.gatt.connect();
+    const svc=await server.getPrimaryService(G2_SVC);
+    const wChar=await svc.getCharacteristic(G2_WRITE);
+    const nChar=await svc.getCharacteristic(G2_NOTIF);
+    await nChar.startNotifications();
+    const send=async(p,delay=100)=>{await wChar.writeValueWithoutResponse(p);await new Promise(r=>setTimeout(r,delay));};
+
+    // ── AUTH ──────────────────────────────────────────────────────────
+    st.remove();st=toast('Authenticating...','#7dcfff');
+    for(const p of g2BuildAuth()){await send(p,100);}
+    await new Promise(r=>setTimeout(r,500));
+
+    // ── FORMAT TEXT ───────────────────────────────────────────────────
+    const pages=g2FormatPages(text);
+    const totalLines=text.split('\n').length;
+    const contentH=Math.max(1,Math.round(totalLines*2665/140));
+
+    // ── DISPLAY CONFIG (0x0E-20) — hardcoded blob from Python source ──
+    const cfgBlob=new Uint8Array([
+      0x08,0x01,0x12,0x13,0x08,0x02,0x10,0x90,0x4E,0x1D,0x00,0xE0,0x94,0x44,0x25,0x00,
+      0x00,0x00,0x28,0x00,0x30,0x00,0x12,0x13,0x08,0x03,0x10,0x0D,0x0F,0x1D,0x00,0x40,
+      0x8D,0x44,0x25,0x00,0x00,0x00,0x28,0x00,0x30,0x00,0x12,0x12,0x08,0x04,0x10,0x00,
+      0x1D,0x00,0x00,0x88,0x42,0x25,0x00,0x00,0x00,0x00,0x28,0x00,0x30,0x00,0x12,0x12,
+      0x08,0x05,0x10,0x00,0x1D,0x00,0x00,0x92,0x42,0x25,0x00,0x00,0xA2,0x42,0x28,0x00,
+      0x30,0x00,0x12,0x12,0x08,0x06,0x10,0x00,0x1D,0x00,0x00,0xC6,0x42,0x25,0x00,0x00,
+      0xC4,0x42,0x28,0x00,0x30,0x00,0x18,0x00
+    ]);
+    const dispPayload=g2Cat(new Uint8Array([0x08,0x02,0x10,0x14,0x22,0x6A]),cfgBlob);
+    await send(g2Pkt(0x08,0x0E,0x20,dispPayload),300);
+
+    // ── TELEPROMPTER INIT (0x06-20 type=1) ───────────────────────────
+    st.remove();st=toast('Sending to glasses...','#7dcfff');
+    const dispSettings=g2Cat(
+      new Uint8Array([0x08,0x01,0x10,0x00,0x18,0x00,0x20,0x8B,0x02]),
+      g2LV(0x28,g2VI(contentH)),
+      new Uint8Array([0x30,0xE6,0x01,0x38,0x8E,0x0A,0x40,0x05,0x48,0x00])
+    );
+    const settings=g2Cat(new Uint8Array([0x08,0x01,0x12]),g2VI(dispSettings.length),dispSettings);
+    const initPayload=g2Cat(new Uint8Array([0x08,0x01,0x10,0x15,0x1A]),g2VI(settings.length),settings);
+    await send(g2Pkt(0x09,0x06,0x20,initPayload),500);
+
+    // ── CONTENT PAGES ─────────────────────────────────────────────────
+    let seq=0x0A,msgId=0x16;
+    const sendPage=async(pageNum,pageText)=>{
+      const tb=new TextEncoder().encode('\n'+pageText);
+      const inner=g2Cat(g2Cat(new Uint8Array([0x08]),g2VI(pageNum)),new Uint8Array([0x10,0x0A]),g2LV(0x1A,tb));
+      const payload=g2Cat(new Uint8Array([0x08,0x03,0x10]),g2VI(msgId),g2LV(0x2A,inner));
+      await send(g2Pkt(seq,0x06,0x20,payload),80);
+      seq=(seq+1)&0xFF;msgId++;
+    };
+
+    for(let i=0;i<Math.min(10,pages.length);i++)await sendPage(i,pages[i]);
+
+    // Mid-stream marker
+    await send(g2Pkt(seq,0x06,0x20,g2Cat(new Uint8Array([0x08,0xFF,0x01,0x10]),g2VI(msgId),new Uint8Array([0x6A,0x04,0x08,0x00,0x10,0x06]))),100);
+    seq=(seq+1)&0xFF;msgId++;
+
+    for(let i=10;i<Math.min(12,pages.length);i++)await sendPage(i,pages[i]);
+
+    // Sync trigger
+    await send(g2Pkt(seq,0x80,0x00,g2Cat(new Uint8Array([0x08,0x0E,0x10]),g2VI(msgId),new Uint8Array([0x6A,0x00]))),100);
+    seq=(seq+1)&0xFF;msgId++;
+
+    for(let i=12;i<pages.length;i++)await sendPage(i,pages[i]);
+
+    st.remove();toast('✓ Sent to glasses','#50c878');
+    setTimeout(()=>device.gatt.disconnect(),3000);
+
+  }catch(e){
+    st?.remove();
+    if(e.name==='NotFoundError')toast('No G2 found — glasses powered on?','#ff6b6b');
+    else toast('BLE: '+e.message,'#ff6b6b');
+    console.error('G2 BLE:',e);
+  }
+}
+// ── End G2 BLE ────────────────────────────────────────────────────────────
+
 function _showScript(label,text){
   const out=document.getElementById('quick-script-out');
   const lbl=document.getElementById('quick-script-label');
@@ -6057,6 +6247,12 @@ function bComms(){
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>{});
   });
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
+    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
+    if(navigator.bluetooth&&scriptText){
+      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
+        g2BLESend(scriptText);return;
+      }
+    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
@@ -6123,6 +6319,12 @@ function bComms(){
   });
   document.getElementById('btn-cucp')?.addEventListener('click',()=>{navigator.clipboard?.writeText(S.callupScript||'');});
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
+    const scriptText=S.callupScript||'';
+    if(navigator.bluetooth&&scriptText){
+      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
+        g2BLESend(scriptText);return;
+      }
+    }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
       const t=document.createElement('div');
