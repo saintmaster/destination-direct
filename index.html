@@ -4550,9 +4550,7 @@ function bCallup(){
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
     const scriptText=S.callupScript||'';
     if(navigator.bluetooth&&scriptText){
-      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
-        g2BLESend(scriptText);return;
-      }
+      g2BLESend(scriptText);return;
     }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
@@ -5209,7 +5207,7 @@ function vPosrep(){
       <div id="quick-script-out" style="display:none;margin-top:10px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
           <div id="quick-script-label" style="font-size:9px;color:#4fc3f7;letter-spacing:.12em"></div>
-          <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','GLASSES','font-size:10px;padding:4px 10px')}</div>
+          <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','☁ GLASSES','font-size:10px;padding:4px 10px')}${btn('b2','btn-q-ble','⬡ BLE','font-size:10px;padding:4px 10px')}</div>
         </div>
         <div id="quick-script-text" class="pb" style="font-size:12px;line-height:1.8"></div>
       </div>
@@ -5384,9 +5382,7 @@ function bPosrep(){
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
     const scriptText=document.getElementById('quick-script-text')?.textContent||'';
     if(navigator.bluetooth&&scriptText){
-      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
-        g2BLESend(scriptText);return;
-      }
+      g2BLESend(scriptText);return;
     }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
@@ -5399,6 +5395,11 @@ function bPosrep(){
   document.getElementById('btn-q-copy')?.addEventListener('click',()=>{
     const txt=document.getElementById('quick-script-text');
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>alert('Copied!'));
+  });
+  document.getElementById('btn-q-ble')?.addEventListener('click',()=>{
+    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
+    if(scriptText)g2BLESend(scriptText);
+    else alert('No script to send — generate a script first.');
   });
 
   document.getElementById('btn-gps')?.addEventListener('click',()=>{
@@ -5593,7 +5594,7 @@ function vComms(){
   const scriptOut=`<div id="quick-script-out" style="display:none;margin-top:10px;background:#050c18;border:1px solid #1e3a5f;border-radius:6px;padding:10px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
       <div id="quick-script-label" style="font-size:9px;color:#4fc3f7;letter-spacing:.12em;font-weight:bold"></div>
-      <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','GLASSES','font-size:10px;padding:4px 10px')}</div>
+      <div style="display:flex;gap:6px">${btn('bg','btn-q-copy','📋 COPY','font-size:10px;padding:4px 10px')}${btn('bg','btn-q-glasses','☁ GLASSES','font-size:10px;padding:4px 10px')}${btn('b2','btn-q-ble','⬡ BLE','font-size:10px;padding:4px 10px')}</div>
     </div>
     <div id="quick-script-text" style="font-size:12px;line-height:1.8;color:#c8d8e8;white-space:pre-wrap;font-family:monospace"></div>
   </div>`;
@@ -6246,12 +6247,15 @@ function bComms(){
     const txt=document.getElementById('quick-script-text');
     if(txt)navigator.clipboard?.writeText(txt.textContent).then(()=>alert('Copied!')).catch(()=>{});
   });
+  document.getElementById('btn-q-ble')?.addEventListener('click',()=>{
+    const scriptText=document.getElementById('quick-script-text')?.textContent||'';
+    if(scriptText)g2BLESend(scriptText);
+    else alert('No script to send — generate a script first.');
+  });
   document.getElementById('btn-q-glasses')?.addEventListener('click',()=>{
     const scriptText=document.getElementById('quick-script-text')?.textContent||'';
     if(navigator.bluetooth&&scriptText){
-      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
-        g2BLESend(scriptText);return;
-      }
+      g2BLESend(scriptText);return;
     }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
@@ -6321,9 +6325,7 @@ function bComms(){
   document.getElementById('btn-glasses')?.addEventListener('click',()=>{
     const scriptText=S.callupScript||'';
     if(navigator.bluetooth&&scriptText){
-      if(confirm('Send via BLE to glasses directly?\n(Cancel = copy Netlify URL instead)')){
-        g2BLESend(scriptText);return;
-      }
+      g2BLESend(scriptText);return;
     }
     const url=location.origin+'/.netlify/functions/glasses';
     navigator.clipboard?.writeText(url).then(()=>{
